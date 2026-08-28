@@ -34,39 +34,6 @@
       </div>
     </div>
 
-    <div class="filter-bar">
-      <div class="filter-label">开发人员</div>
-      <el-tag
-        :effect="!developerFilter ? 'dark' : 'light'"
-        size="small"
-        style="cursor: pointer; margin-right: 8px"
-        @click="developerFilter = ''"
-      >
-        全部: {{ currentStats.total }}
-      </el-tag>
-      <el-tag
-        v-if="developerStats['未指定']"
-        :effect="developerFilter === '未指定' ? 'dark' : 'light'"
-        type="info"
-        size="small"
-        style="cursor: pointer; margin-right: 8px"
-        @click="toggleDeveloperFilter('未指定')"
-      >
-        未指定: {{ developerStats['未指定'] }}
-      </el-tag>
-      <el-tag
-        v-for="(count, name) in developerStats"
-        :key="name"
-        v-show="name !== '未指定'"
-        :effect="developerFilter === name ? 'dark' : 'light'"
-        size="small"
-        style="cursor: pointer; margin-right: 8px"
-        @click="toggleDeveloperFilter(name)"
-      >
-        {{ name }}: {{ count }}
-      </el-tag>
-    </div>
-
     <el-alert v-if="!tfsAvailable" :title="tfsMessage" type="warning" :closable="false" show-icon style="margin-bottom: 16px">
       <template #default>
         请检查 <router-link to="/mcp">MCP 管理</router-link> 中 tfs-query-winex 是否已注册，
@@ -249,7 +216,6 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Setting } from '@element-plus/icons-vue'
 import { tfsApi, type TfsWorkItem, type TfsProject, type TfsAttachment } from '@/api/tfs'
-import { teamApi } from '@/api/team'
 import { getConfigMap, listConfigs, saveConfig, deleteConfig, type SystemConfig } from '@/api/systemConfig'
 import MarkdownIt from 'markdown-it'
 
@@ -454,33 +420,6 @@ function parseTags(tags?: string): string[] {
 
 // ========== 统计栏 / 过滤（均针对当前 Tab） ==========
 const stateFilter = ref('')
-const developerFilter = ref('')
-const teamMemberNames = ref<string[]>([])
-
-async function loadTeamMembers() {
-  try {
-    const workspaces = await teamApi.listWorkspaces()
-    const nameSet = new Set<string>()
-    for (const ws of workspaces) {
-      const members = await teamApi.listMembers(ws.id)
-      for (const m of members) {
-        if (m.displayName) nameSet.add(m.displayName)
-      }
-    }
-    teamMemberNames.value = Array.from(nameSet).sort()
-  } catch {
-  }
-}
-
-function matchDeveloper(item: TfsWorkItem): boolean {
-  if (!developerFilter.value) return true
-  if (developerFilter.value === '未指定') {
-    const tags = (item.tags || '').toLowerCase()
-    return !teamMemberNames.value.some(name => tags.includes(name.toLowerCase()))
-  }
-  const tags = (item.tags || '').toLowerCase()
-  return tags.includes(developerFilter.value.toLowerCase())
-}
 
 const currentStats = computed(() => {
   const items = activeItems.value
@@ -496,34 +435,10 @@ function toggleStateFilter(state: string) {
   stateFilter.value = stateFilter.value === state ? '' : state
 }
 
-const developerStats = computed(() => {
-  const items = activeItems.value
-  const stats: Record<string, number> = {}
-  const assignedIndices = new Set<number>()
-  for (let i = 0; i < teamMemberNames.value.length; i++) {
-    const name = teamMemberNames.value[i]
-    const count = items.filter((item, idx) => {
-      const tags = (item.tags || '').toLowerCase()
-      const match = tags.includes(name.toLowerCase())
-      if (match) assignedIndices.add(idx)
-      return match
-    }).length
-    if (count > 0) stats[name] = count
-  }
-  const unassigned = items.length - assignedIndices.size
-  if (unassigned > 0) stats['未指定'] = unassigned
-  return stats
-})
-
-function toggleDeveloperFilter(name: string) {
-  developerFilter.value = developerFilter.value === name ? '' : name
-}
-
-// 状态/开发人员过滤后的当前 Tab 数据
+// 状态过滤后的当前 Tab 数据
 const filteredActiveItems = computed(() => {
   let items = activeItems.value
   if (stateFilter.value) items = items.filter(item => item.state === stateFilter.value)
-  if (developerFilter.value) items = items.filter(matchDeveloper)
   return items
 })
 
@@ -536,7 +451,7 @@ const pagedItems = computed(() => {
   return filteredActiveItems.value.slice(start, start + pageSize.value)
 })
 
-watch([activeTab, stateFilter, developerFilter, pageSize], () => {
+watch([activeTab, stateFilter, pageSize], () => {
   currentPage.value = 1
 })
 
@@ -589,7 +504,6 @@ function downloadAttachment(attachment: TfsAttachment) {
 // ========== Tab 切换 ==========
 function handleTabChange(name: string | number) {
   stateFilter.value = ''
-  developerFilter.value = ''
   currentPage.value = 1
   const key = String(name)
   if (!tabLoaded[key] && tfsAvailable.value) {
@@ -603,7 +517,6 @@ onMounted(async () => {
   await loadTfsServerUrl()
   await loadTabConfigs()
   if (tfsAvailable.value) {
-    loadTeamMembers()
     loadTab('followed')
   }
 })
@@ -663,20 +576,6 @@ onMounted(async () => {
 .stats-empty {
   font-size: 13px;
   color: #c0c4cc;
-}
-
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.filter-label {
-  font-size: 13px;
-  color: #909399;
-  margin-right: 8px;
-  white-space: nowrap;
 }
 
 .tab-toolbar {
