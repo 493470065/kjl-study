@@ -1,6 +1,8 @@
 @echo off
 chcp 65001 >nul
 setlocal
+REM MySQL 安装目录：可通过系统环境变量 MYSQL_HOME 覆盖（新电脑路径不同时设置它即可）
+if not defined MYSQL_HOME set "MYSQL_HOME=E:\KjlStudy\mysql"
 title 景磊的AI乐园站 - 启动
 echo ============================================
 echo   景磊的AI乐园站 启动
@@ -16,7 +18,7 @@ REM ============ 1. MySQL 3306 ============
 netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul 2>&1
 if not errorlevel 1 goto mysql_running
 echo [启动] 正在启动 MySQL 8.0 ...
-start "RACC-MySQL-3306" cmd /k "E:\KjlStudy\mysql\bin\mysqld.exe --defaults-file=E:\KjlStudy\mysql\my.ini --console"
+start "RACC-MySQL-3306" cmd /k ""%MYSQL_HOME%\bin\mysqld.exe" --defaults-file="%MYSQL_HOME%\my.ini" --console"
 set /a mcount=0
 :wait_mysql
 set /a mcount+=1
