@@ -1,0 +1,84 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: racc-platform
+  datasource:
+    # MySQL 8.0（本地实例：E:\KjlStudy\mysql，随 启动平台.bat 拉起）
+    # allowPublicKeyRetrieval：caching_sha2_password 首次握手需要；rewriteBatchedStatements：批量写入加速
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:racc}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:racc123}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+      max-lifetime: 1800000
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      # update：实体驱动建表（首次空库启动自动建全部表）；数据稳定后可改 validate/none
+      ddl-auto: update
+    open-in-view: false
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 500MB
+  # Redis 可选：未配置/不可达时自动降级内存缓存（CacheConfig 处理）
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  # Neo4j 可选：知识图谱，未配置时图谱功能降级提示
+  neo4j:
+    uri: ${NEO4J_URI:}
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:}
+  ai:
+    openai:
+      # LLM 配置位：读取环境变量（由 env.cmd 注入，该文件已加入 .gitignore 不入库）。
+      # 支持 OpenAI Compatible（vLLM/OneAPI/公司网关）与 Ollama（/v1 兼容端点）
+      api-key: ${LLM_API_KEY:}
+      base-url: ${LLM_BASE_URL:https://wincode.winning.com.cn/ai}
+      chat:
+        options:
+          model: ${LLM_MODEL:glm-5}
+        # chat 默认启用（网关 glm-5 已验证可用）
+        enabled: ${LLM_ENABLED:true}
+      embedding:
+        options:
+          model: ${LLM_EMBEDDING_MODEL:text-embedding-3-small}
+        # 向量检索能力独立开关：绝大多数 OpenAI 兼容网关只提供 chat，不提供 /v1/embeddings，
+        # 此时保持 false（平台自动降级为关键词检索，避免无 embedding 端点却强行启用导致报错）。
+        enabled: ${LLM_EMBEDDING_ENABLED:false}
+
+racc:
+  jwt:
+    # 生产建议外置；本地复刻默认值即可
+    secret: racc-platform-jwt-secret-key-2026-please-change-in-production-0123456789
+    expire-hours: 24
+  data-dir: ../data
+  tfs:
+    # 默认值可被 system_configs 表 tfs.serverUrl 覆盖
+    default-server-url: http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0
+    # 桥接目标：需求看板 /api/tfs/* 转发到该 MCP Server 的工具
+    mcp-server: tfs-query-winex
+  upload:
+    dir: ${racc.data-dir}/uploads
+  mcp:
+    dir: ${racc.data-dir}/mcp
+  skills:
+    dir: ${racc.data-dir}/skills
+  pipeline:
+    dir: ${racc.data-dir}/pipeline
+  agent:
+    # write_file 工具的绝对路径写入白名单（逗号分隔）；相对路径始终写入 agent-files 沙箱
+    write-allowed-dirs: ${RACC_WRITE_ALLOWED_DIRS:E:\37结构性问题治理}
+
+logging:
+  level:
+    com.racc: INFO
+    org.hibernate.SQL: WARN

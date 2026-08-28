@@ -1,0 +1,75 @@
+================================================================================
+SESSION: 2026-08-27 16:55
+================================================================================
+
+## 本次完成：MySQL 丢失后整站恢复 + 数据库重建迁移
+
+### 背景
+- 机器上的 F:\mysql（MySQL 8.0.29 便携版）已不存在，全盘（C/E/F）搜索无 mysqld.exe，
+  Windows 无 MySQL 服务；后端强依赖 MySQL（application.yml 已从 SQLite 切到 MySQL），无法启动。
+- 幸存的恢复源：data/racc.db（318MB SQLite 全量备份，含 23,821 篇知识库文档）+ tools/migration/SqliteToMysql（迁移工具源码）。
+
+### 本次完成
+- [x] 下载安装便携版 MySQL 8.0.29 → E:\mysql（华为云镜像 repo.huaweicloud.com，224MB，11.4MB/s；2026-08-27 平移至 E:\KjlStudy\mysql）
+  - my.ini 重建于 E:\mysql\my.ini（utf8mb4 / ngram_token_size=2 / 端口3306 / max_allowed_packet=512M）
+  - `--initialize-insecure` 初始化 → root 密码设 racc123 → 建库 racc(utf8mb4)
+- [x] 后端首次启动（空库，Hibernate ddl-auto:update 自动建 39 张表 + KnowledgeDatabaseInitializer 建 FULLTEXT ngram 索引）
+  然后停止后端 → SqliteToMysql 迁移（改 SRC_URL=E:/KjlStudy/AI/AIStudio/data/racc.db，javac 重新编译）
+  → 38 表 / 24,112 行 / 14 秒全部迁入，knowledge_documents 23,821 行与 README 完全一致
+- [x] Maven 重建后端：本机无 .m2（原构建在 Lenovo 用户下），配置阿里云镜像 ~/.m2/settings.xml 后
+  `mvn -DskipTests package` 58.7s 成功，新 jar 含 mysql-connector-j-9.1.0
+- [x] 全链路验证：登录 admin/admin123 ✓、/api/auth/me 鉴权 ✓、前端 8090 ✓、
+  知识库列表（23,821 篇）✓、/api/knowledge/search?q=病历 FULLTEXT ngram 返回带评分结果 ✓
+- [x] 启动/停止脚本更新（F:\AI管理平台 → E:\KjlStudy\AI\AIStudio，F:\mysql → E:\mysql）：
+  启动平台.bat、停止平台.bat、tools/env.cmd、tools/env.sh、README.md 全部改到新路径
+- [x] 平台现已运行：MySQL 3306 / 后端 8091（java -jar jar）/ 前端 8090（npm run dev）
+
+## 当前状态
+- 数据库：MySQL E:\KjlStudy\mysql:3306（root/racc123 库 racc），数据由 SQLite 全量迁移恢复
+- 后端/前端运行于 8091 / 8090，登录 admin/admin123
+
+## 下一步 / 备注
+- 浏览器未能由会话自动打开（沙箱拒绝 start/explorer），用户需手动访问 http://localhost:8090
+- 迁移工具编译依赖的 JDBC jar 备份在 tools/migration/lib/（mysql-connector-j-9.1.0 + sqlite-jdbc-3.46.1.3）
+- 若 F:\mysql 重新出现，注意勿与 E:\mysql 双实例抢 3306
+- LLM 网关 env.cmd 已带 WinCode 网关配置；embedding 端点网关不支持，平台自动降级关键词检索
+
+## 遇到的问题
+- Git Bash 下 PATH export 用 Windows 分号分隔符导致 mvn not found；应改用冒号或直接绝对路径调用
+- 迁移工具 classpath 用 /tmp 虚拟路径 Windows JVM 不识别（No suitable driver）；需用真实 Windows 路径
+- 中文文件名 bat 经 `cmd /c` 调用有编码问题；用户正常双击（Explorer 传 Unicode）无此问题
+
+================================================================================
+SESSION: 2026-08-27 19:30
+================================================================================
+
+## 本次完成：MySQL 平移 + MCP 需求服务 + 其他
+- [x] MySQL 从 E:\mysql 平移至 E:\KjlStudy\mysql（优雅关闭→mv→改 my.ini basedir/datadir→重启）
+  - 全量排查引用：仅 AIStudio 内 5 处（启动/停止 bat、README×4、progress.txt、application.yml 注释），
+    PATH/服务/他处均无引用；后端 JDBC 走 localhost:3306 不依赖路径，Hikari 自动重连无需重启后端
+- [x] 新建 MCP Server：data/mcp/mcp-tfs-requirements（TFS 需求获取）
+  - 工具：query_requirements / get_requirement / get_requirement_tree / list_projects
+  - 复用并升级 tfs-client.mjs：WIQL 改原生 POST /_apis/wit/wiql?api-version=4.1（SDK 走 GET 会 URL 过长 414；
+    返回 15 万+ 条 id 时须先截断再 getWorkItems，否则一次 GET 携带海量 id 同样 414）
+  - 需求树用原生 REST $expand=relations，绕开 SDK getWorkItem(depth) 在老 TFS 上超时的问题
+  - stdio 直连测试通过：真实查询 WiNEX-Inpatient-2（total=152,779 条需求）✓
+  - 已在平台注册并启动（id=2，RUNNING，toolCount=4，命令 C:/Program Files/nodejs/node.exe index.js）
+- [x] 前述会话遗留：平台 MCP 模块 toolCount 为惰性填充（startServer 只拉起进程，点「查看工具」
+  或 POST /{id}/test 才经 fetchTools 握手填充并写库）
+
+## 当前状态
+- MySQL: E:\KjlStudy\mysql:3306（root/racc123）；后端 8091 / 前端 8090 运行中
+- MCP: mcp-tfs-requirements 已注册并 RUNNING（连接测试 success，4 工具）
+
+## 注意事项
+- 现成 data/mcp/tfs-query-winex（更全面的 TFS 工作项工具，含附件/建改）尚未注册进平台，需要的话可随时注册
+- MCP 包 config.json 明文存 PAT；SVN/Git 若提交 data 目录需留意
+- 前端「手动配置」创建弹窗已支持环境变量 + command 必填校验（上一会话完成）
+- [x] 需求分析师闭环改造（诊断→修复）：
+  - 诊断：Agent 挂 std-req-analysis-emr-v5（扫码版）但 system_prompt 是"不扫码"定位（应为 kb-only-v5）；
+    E:\winning\workspace-ma 代码目录不存在 → emr-v5 流程卡死在代码扫描；mcp-tfs-requirements 只有读工具，
+    缺回写/附件/建任务能力 → 流程走不完
+  - 修复：① preferredSkills → std-req-analysis-kb-only-v5（与 system_prompt 一致，去代码扫描依赖）
+    ② 注册 tfs-query-winex（id=3，RUNNING，连接测试 success，9 工具：get_work_item(s)/list_projects/
+    list/download/upload 附件/update_work_item/create_work_item）
+  - 待用户操作：Agent 修改弹窗勾选 MCP（tfs-query-winex 必选，mcp-tfs-requirements 可选）
