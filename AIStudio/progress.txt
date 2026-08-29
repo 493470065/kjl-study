@@ -166,3 +166,15 @@ SESSION: 2026-08-29 18:30
   原隐藏页面 → 已完整回退：恢复原 4 组 10 项（工作区/资产与能力/业务编排/连接与基座），
   16 个页面维持隐藏（URL 直达），App.vue 菜单/图标导入/systemSubMenuOpen 均还原
 - 结论：菜单保持复刻参考平台的精简设计，隐藏页不主动开放
+
+### 追加：Git 推送认证修复（同日 22:30）
+- 现象：git push 报 Invalid username or token（GitHub 拒绝密码认证）
+- 根因链：① ghfast.top 加速代理存的是 kjl+密码 格式旧凭据（第一代 GCMW 1.20.0 所存，
+  GitHub 早已废弃密码认证）；② credential.helper=manager 指向的正是这个废弃的
+  GCM for Windows 1.20.0（不支持 OAuth/设备码），本会话无交互终端时其 GUI 弹窗不可见，
+  认证必挂
+- 修复：删除 ghfast 旧凭据 → credential.helper 全局切到 manager-core（GCM 2.x）→
+  origin 从 ghfast 代理切到 github.com 直连（实测可达）→ 最终发现本机已有
+  ed25519 SSH 密钥且已注册在 GitHub 账号（493470065），直接改 SSH 远端：
+  git@github.com:493470065/kjl-study.git，推送成功
+- 现状：main 与 origin/main 同步；以后推送走 SSH，无需再输凭据、不会过期
