@@ -39,7 +39,7 @@
         </el-menu-item-group>
 
         <!-- 业务编排 -->
-        <el-menu-item-group v-if="anyAccess(['/workflows', '/automate'])">
+        <el-menu-item-group v-if="anyAccess(['/workflows', '/automate', '/sandbox'])">
           <template #title>业务编排</template>
           <el-menu-item v-if="auth.hasMenuAccess('/workflows')" index="/workflows">
             <el-icon><Share /></el-icon>
@@ -48,6 +48,10 @@
           <el-menu-item v-if="auth.hasMenuAccess('/automate')" index="/automate">
             <el-icon><List /></el-icon>
             <span>自动化管理</span>
+          </el-menu-item>
+          <el-menu-item v-if="auth.hasMenuAccess('/sandbox')" index="/sandbox">
+            <el-icon><Box /></el-icon>
+            <span>沙箱管理</span>
           </el-menu-item>
         </el-menu-item-group>
 
@@ -65,7 +69,7 @@
         </el-menu-item-group>
 
         <!--
-          其余页面（运行时监控、沙箱、审计、评估、结构化输出、本地算力、团队协作、
+          其余页面（运行时监控、审计、评估、结构化输出、本地算力、团队协作、
           运营看板、开发环境、系统配置、定时任务、Webhook、产品线、仓库、账户管理）
           维持隐藏：路由仍可直接通过 URL 访问，需要开放时在此按 hasMenuAccess 添加即可。
         -->
@@ -157,7 +161,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { HomeFilled, ChatDotRound, Document, Collection, Connection, List, User, Monitor, Setting, DataLine, OfficeBuilding, Cpu, Files, Key, Share, DataBoard, DataAnalysis, ArrowDown, Lock, SwitchButton, Fold, Expand, Clock, Link } from '@element-plus/icons-vue'
+import { HomeFilled, ChatDotRound, Document, Collection, Connection, List, User, Monitor, Setting, DataLine, OfficeBuilding, Cpu, Files, Key, Share, DataBoard, DataAnalysis, ArrowDown, Lock, SwitchButton, Fold, Expand, Clock, Link, Box } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 

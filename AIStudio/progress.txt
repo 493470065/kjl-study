@@ -73,3 +73,96 @@ SESSION: 2026-08-27 19:30
     ② 注册 tfs-query-winex（id=3，RUNNING，连接测试 success，9 工具：get_work_item(s)/list_projects/
     list/download/upload 附件/update_work_item/create_work_item）
   - 待用户操作：Agent 修改弹窗勾选 MCP（tfs-query-winex 必选，mcp-tfs-requirements 可选）
+
+================================================================================
+SESSION: 2026-08-29 18:30
+================================================================================
+
+## 本次完成：沙箱管理从占位升级为真实可用的受控执行环境
+
+### 背景
+- 沙箱管理原为纯占位：listActive 恒空、销毁空方法、racc.sandbox.enabled 默认 false 且不在 yml；
+  页面两处文案错误（提示 agentos.sandbox.enabled、"网络：none（无网络隔离）"自相矛盾）、
+  引用不存在的 Dockerfile.sandbox。本机无 Docker，纯容器方案无法落地验证。
+
+### 方案（用户确认：本地进程沙箱 + Docker 预留）
+- 两级模型：沙箱实例（独立工作目录 data/sandbox/{id}）+ 执行记录（每条命令异步执行、输出落库）
+- 引擎分层：LocalSandboxExecutor（真实，ProcessBuilder + cmd/sh -c）；
+  DockerSandboxExecutor（预留，docker CLI 驱动，--memory/--cpus/--network none/--read-only，
+  不可用自动降级 LOCAL，对齐平台降级家法）
+
+### 改动清单
+- 后端（均为 com.racc.sandbox 扁平包）：SandboxEntity/SandboxExecutionEntity（sandboxes、
+  sandbox_executions 两表，ddl-auto 自动建）、两个 Repository、LocalSandboxExecutor、
+  DockerSandboxExecutor、SandboxService 重写（有界线程池 1/2 + afterCommit 投递 +
+  启动对账 + 审计写入 AuditTaskExecutionEntity taskType=SANDBOX，为审计表首个真实生产者）、
+  SandboxController 重写（8 端点，旧契约 /status /active DELETE/{taskId} 全兼容）
+- application.yml：racc.sandbox 块（enabled: true / dir / default-timeout-seconds 600 /
+  max-output-chars 65536 / docker{enabled false, image, memory, cpus}）
+- 前端：api/sandbox.ts 扩展（旧导出签名保留）、useStatusTag +DESTROYED、
+  SandboxView.vue 重写（概览 4 卡 + 表格 + 创建/执行对话框 + 详情抽屉 + 输出对话框，
+  抽屉 5s 轮询 silent+diff，UED 规范逐条落位）、根目录新建 Dockerfile.sandbox
+
+### 验证（curl 冒烟全绿）
+- status/创建/执行/输出落库 ✓；失败语义（exitCode=1 → FAILED）✓；
+  3s 限制跑 ping -n 10 → TIMEOUT 强杀 ✓；重名 400/不存在 404/空命令 400/销毁后执行 400/重复销毁 400 ✓
+- 中文编码坑：本机 Windows 命令输出混杂两种编码（cmd echo 走 GBK，ping 重定向输出 UTF-8），
+  固定单一字符集必有一类乱码 → 改为字节缓存收尾解码（严格 UTF-8 优先，失败回退平台默认字符集），两类均验证通过
+- 审计表 5 行落库 ✓；销毁后工作目录删除 ✓；旧契约 /active（taskId+status）✓
+- 前端 vue-tsc：沙箱相关文件零错误（存量 4 个错误在 chat.ts/AgentConfigView/KnowledgeView，与本次无关）
+
+### 已知限制
+- LOCAL 模式与后端同权限，无硬隔离（页面文案如实说明）；后端重启不追杀孤儿子进程（超时/销毁兜底）；
+  Git Bash 的 curl 传中文 JSON 会被控制台重编码（浏览器 axios 不受影响，测试用字节级 payload 规避）
+
+### 待用户手动回归
+- 页面操作流：创建→执行→抽屉看进度/输出→销毁；未启用告警可将 yml 改 false 重启验证
+
+### 追加：开启/关闭做成运行时配置（同日 19:30）
+- 诉求：沙箱启用状态不改文件、不重启即可切换
+- 实现：复用平台既有 system_configs 运行时配置机制（TFS 同款）——
+  SandboxService 读取顺序：system_configs(group=sandbox,key=enabled) 优先 → 缺省回退 yml；
+  新增 POST /api/sandbox/config {enabled} upsert 该行；/status 增 enabledSource 字段
+- 前端：概览首卡 el-tag → el-switch（乐观更新+失败回滚），副标签显示开关来源；未启用告警文案同步更新
+- 验证全绿：开→关即时生效（创建接口 400 新文案）→ 开恢复；DB 行落库；非法入参 400；前端 HMR 无错
+- 注意：一旦页面上切过开关，system_configs 行即存在并长期优先于 yml（yml 仅作初始默认值）
+
+### 追加：沙箱关联任务下拉 + Docker 引擎运行时开关（同日 20:10）
+- 创建沙箱「关联任务」下拉：数据源先改为自动化任务执行记录（/api/pipeline），
+  后按用户要求再优化为自动化管理的任务类型（/api/automate/task-types，仅启用项，
+  值=任务类型 code 如 req-consolidation，选项带图标+名称+code）；实体 javadoc 同步更新口径
+- Docker 引擎开关也接运行时配置：system_configs(group=sandbox,key=docker.enabled)，
+  DockerSandboxExecutor 注入 SystemConfigService，探测结果双重检查缓存 5 分钟（避免每次
+  /status 都跑 docker CLI），切换开关即失效缓存；/status 增 dockerEnabledSource；
+  POST /api/sandbox/config 扩展为 {enabled?, dockerEnabled?} 返回完整最新状态
+- 前端：概览「启用状态」「Docker 引擎」两卡均为 el-switch（乐观更新+回滚），
+  Docker 卡副标签显示 未启用/本机不可用/可用
+- 验证全绿：开→关即时生效、来源标注正确（system_configs/application.yml）、DB 双行落库、
+  非法入参 400；用户页面实测创建沙箱 req-analysis（关联任务类型）成功
+
+### 追加：Docker Desktop 安装 + 容器模式全链路打通（同日 21:20）
+- 预检：Win11(26200) + WSL2(Ubuntu) + 虚拟化已开 + C 盘 332G，条件齐全
+- 安装：官方源 desktop.docker.com 实测 3.3MB/s 下载 602MB；Git Bash/cmd 直接跑安装程序
+  返回 127（GUI 启动方式问题），改 PowerShell Start-Process -Wait 执行成功（EXIT=0）；
+  Docker Engine CLI 29.7.2
+- 拉镜像两个坑：① Docker Hub 官方源被墙（connectex 超时）→ 配 ~/.docker/daemon.json
+  registry-mirrors（daocloud/1ms.run/dockerproxy.net）重启引擎；
+  ② Git Bash 环境 docker-credential-desktop 不在 PATH → 把
+  C:\Program Files\Docker\Docker\resources\bin 加进 PATH 后拉取成功
+- 镜像构建：agentos-sandbox:latest 成功（debian:bookworm-slim + bash/curl/python3 + 非 root）
+- 后端修复：DockerSandboxExecutor.create 挂载路径转绝对路径（DB 存相对路径，-v 必须绝对）；
+  后端重启时 PATH 带上 Docker 目录（ProcessBuilder 找 docker 命令）
+- E2E 全绿：平台 /status 显示 engine=DOCKER, dockerAvailable=true, imagePresent=true；
+  创建 DOCKER 沙箱 → 真实容器 racc-sandbox-{id} Up；容器内执行命令返回
+  uid=1000(sandbox)/Debian 12//work；只读根文件系统（写 / 被拒）、/work 写入宿主机
+  data/sandbox/{id} 双向可见、外网访问被阻断（--network none）；销毁后容器移除 + 目录清空
+- 当前状态：Docker 引擎开关已在 system_configs 置 true，沙箱默认引擎升级为 DOCKER；
+  Docker Desktop 随桌面端常驻运行（后台任务），welcome-to-docker 欢迎容器已清理
+- 注意：后端进程需 PATH 含 Docker 目录（本次会话已处理）；启动平台.bat 走系统 PATH，
+  Docker 安装器已将其加入用户环境变量，新起进程不受影响
+
+### 追加：左侧菜单整理（同日 21:30，已回退）
+- 曾按「全量+高频置顶」把 26 页全部入菜单（6 分组+更多折叠）；用户反馈不希望展示
+  原隐藏页面 → 已完整回退：恢复原 4 组 10 项（工作区/资产与能力/业务编排/连接与基座），
+  16 个页面维持隐藏（URL 直达），App.vue 菜单/图标导入/systemSubMenuOpen 均还原
+- 结论：菜单保持复刻参考平台的精简设计，隐藏页不主动开放

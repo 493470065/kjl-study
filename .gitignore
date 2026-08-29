@@ -22,3 +22,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# ===== 前端构建缓存 =====
+**/*.tsbuildinfo

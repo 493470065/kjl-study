@@ -1,0 +1,22 @@
+# 景磊的AI工作站 · 沙箱基础镜像
+# 对应配置项 racc.sandbox.docker.image=agentos-sandbox:latest
+# 构建：docker build -f Dockerfile.sandbox -t agentos-sandbox:latest .
+#
+# 后端以如下约束启动容器（见 DockerSandboxExecutor）：
+#   --memory / --cpus 资源限制、--network none 禁止外网、--read-only 只读根文件系统、
+#   沙箱工作目录挂载到 /work 作为唯一可写区。
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        coreutils \
+        curl \
+        ca-certificates \
+        python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -u 1000 sandbox
+
+WORKDIR /work
+USER sandbox
+
+CMD ["sleep", "infinity"]

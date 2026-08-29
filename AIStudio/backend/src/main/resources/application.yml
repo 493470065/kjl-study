@@ -77,6 +77,19 @@ racc:
   agent:
     # write_file 工具的绝对路径写入白名单（逗号分隔）；相对路径始终写入 agent-files 沙箱
     write-allowed-dirs: ${RACC_WRITE_ALLOWED_DIRS:E:\37结构性问题治理}
+  sandbox:
+    # 沙箱：受控命令执行环境。LOCAL=本地进程沙箱（无外部依赖，开箱即用）；
+    # docker.enabled=true 且本机 Docker 可用时可选 DOCKER 模式（容器隔离），不可用自动降级 LOCAL
+    enabled: true
+    dir: ${racc.data-dir}/sandbox
+    default-timeout-seconds: 600
+    # 单次执行输出落库上限（字符），超限继续抽干但丢弃，防管道阻塞
+    max-output-chars: 65536
+    docker:
+      enabled: false
+      image: agentos-sandbox:latest
+      memory: 512m
+      cpus: "1"
 
 logging:
   level:

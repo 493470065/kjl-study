@@ -45,6 +45,7 @@ const STATUS_MAP: Record<string, { type: TagType; label: string }> = {
   OFFLINE: { type: 'info', label: '离线' },
   BUSY: { type: 'warning', label: '忙碌' },
   CREATING: { type: 'warning', label: '创建中' },
+  DESTROYED: { type: 'info', label: '已销毁' },
   // 知识库 Wiki
   GENERATED: { type: 'success', label: '已生成' },
   GENERATING: { type: 'warning', label: '生成中' },
