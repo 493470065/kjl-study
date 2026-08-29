@@ -1,8 +1,5 @@
 <template>
-  <div class="requirements">
-    <div class="page-header">
-      <h2>需求看板</h2>
-    </div>
+  <page-container title="需求看板" no-card>
 
     <!-- 统计栏（随 Tab 切换，汇总当前 Tab 全量数据的状态分布） -->
     <div class="stats-bar">
@@ -97,12 +94,18 @@
         <el-table-column prop="tags" label="标签" min-width="200">
           <template #default="{ row }">
             <el-tag v-for="tag in parseTags(row.tags)" :key="tag" size="small" style="margin-right: 4px; margin-bottom: 2px">{{ tag }}</el-tag>
-            <span v-if="!row.tags" style="color: #c0c4cc">-</span>
+            <span v-if="!row.tags" style="color: #b8b1a0">-</span>
           </template>
         </el-table-column>
         <el-table-column prop="createdDate" label="创建时间" width="160">
           <template #default="{ row }">
             {{ formatDate(row.createdDate) }}
+          </template>
+        </el-table-column>
+        <!-- 深链：需求 → 一键启动自动化（预填需求号） -->
+        <el-table-column label="操作" width="110" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click.stop="startAutomate(row)">启动自动化</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -115,7 +118,7 @@
           v-model:page-size="pageSize"
           :page-sizes="[20, 50, 100]"
           :total="filteredActiveItems.length"
-          layout="total, sizes, prev, pager, next"
+          layout="total, sizes, prev, pager, next, jumper"
           background
         />
       </div>
@@ -208,16 +211,25 @@
         </div>
       </div>
     </el-drawer>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Setting } from '@element-plus/icons-vue'
 import { tfsApi, type TfsWorkItem, type TfsProject, type TfsAttachment } from '@/api/tfs'
 import { getConfigMap, listConfigs, saveConfig, deleteConfig, type SystemConfig } from '@/api/systemConfig'
 import MarkdownIt from 'markdown-it'
+import { formatDateTime } from '@/utils/format'
+
+const router = useRouter()
+
+/** 需求 → 自动化深链：带上需求号跳转，自动化页自动预填并打开启动弹窗 */
+function startAutomate(row: TfsWorkItem) {
+  router.push({ path: '/automate', query: { workItemId: String(row.id) } })
+}
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -399,13 +411,8 @@ function stateTagColor(state: string) {
   return (map[state] || 'info') as any
 }
 
-function formatDate(dateStr?: string) {
-  if (!dateStr) return '-'
-  try {
-    return new Date(dateStr).toLocaleString('zh-CN')
-  } catch {
-    return dateStr
-  }
+function formatDate(dateStr?: string): string {
+  return dateStr ? formatDateTime(dateStr) : '-'
 }
 
 function renderMarkdown(content: string) {
@@ -527,24 +534,14 @@ onMounted(async () => {
   padding: 0;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
 
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-}
 
 .stats-bar {
   display: flex;
   align-items: center;
   gap: 20px;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 6px;
   margin-bottom: 16px;
 }
@@ -557,14 +554,14 @@ onMounted(async () => {
 
 .stats-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   white-space: nowrap;
 }
 
 .stats-value {
   font-size: 22px;
   font-weight: 700;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .stats-distribution {
@@ -575,7 +572,7 @@ onMounted(async () => {
 
 .stats-empty {
   font-size: 13px;
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .tab-toolbar {
@@ -586,7 +583,7 @@ onMounted(async () => {
 
 .query-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -600,15 +597,15 @@ onMounted(async () => {
 
 .config-default {
   font-size: 12px;
-  color: #909399;
-  font-family: Consolas, Monaco, monospace;
+  color: var(--ink-text-secondary);
+  font-family: var(--app-font-mono);
 }
 
 .config-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   line-height: 1.6;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 4px;
   padding: 8px 12px;
 }
@@ -623,13 +620,13 @@ onMounted(async () => {
 
 .section h4 {
   margin-bottom: 8px;
-  color: #303133;
-  font-size: 15px;
+  color: var(--ink-text);
+  font-size: 16px;
 }
 
 .markdown-content {
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 4px;
   line-height: 1.6;
   font-size: 14px;
@@ -649,7 +646,7 @@ onMounted(async () => {
 }
 
 .markdown-content :deep(code) {
-  background: #e8e8e8;
+  background: #e1dbcb;
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 13px;
@@ -664,7 +661,7 @@ onMounted(async () => {
 }
 
 .id-link {
-  color: #409eff;
+  color: var(--el-color-primary);
   text-decoration: none;
   cursor: pointer;
 }

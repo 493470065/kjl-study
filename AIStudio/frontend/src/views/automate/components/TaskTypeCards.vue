@@ -33,7 +33,8 @@
 
       <!-- 内置：自定义任务（保留原 TFS 需求号 + 工作流 启动方式） -->
       <el-col :xs="24" :sm="12" :md="8" :lg="6">
-        <el-card shadow="hover" class="type-card type-card--custom" @click="$emit('launch', null)">
+        <el-card shadow="hover" class="type-card type-card--custom" role="button" tabindex="0"
+                 aria-label="启动自定义任务" @click="$emit('launch', null)" @keydown.enter.prevent="$emit('launch', null)">
           <div class="type-card__head">
             <span class="type-card__icon">🧩</span>
             <span class="type-card__name">自定义任务</span>
@@ -75,19 +76,19 @@ defineEmits<{
 }
 
 .section-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ink);
 }
 
 .type-card {
   margin-bottom: 16px;
-  border-radius: 10px;
+  border-radius: 12px;
   transition: border-color 0.2s;
 }
 
 .type-card:hover {
-  border-color: #a5b4fc;
+  border-color: #93a1b1;
 }
 
 .type-card--disabled {
@@ -113,13 +114,13 @@ defineEmits<{
 .type-card__name {
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--ink-text);
   flex: 1;
 }
 
 .type-card__desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   line-height: 1.6;
   min-height: 38px;
   display: -webkit-box;
@@ -135,7 +136,7 @@ defineEmits<{
 
 .type-card__model-hint {
   font-size: 12px;
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .type-card__actions {

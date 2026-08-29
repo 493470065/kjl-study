@@ -1,6 +1,5 @@
 <template>
-  <div class="evaluation-view">
-    <h2>AI 评估</h2>
+  <page-container title="AI 评估" no-card>
 
     <el-tabs v-model="activeTab">
       <!-- Tab 1: 在线评估 -->
@@ -108,7 +107,7 @@
           <el-button type="danger" size="small" :icon="Delete" @click="handleClearResults" :disabled="!results.length">清除全部</el-button>
         </div>
 
-        <el-table :data="results" v-loading="loadingResults" border stripe @row-click="handleRowClick">
+        <el-table :data="results" v-loading="loadingResults" stripe @row-click="handleRowClick">
           <el-table-column prop="evaluatorName" label="评估器" width="140" />
           <el-table-column prop="question" label="问题" show-overflow-tooltip />
           <el-table-column prop="score" label="分数" width="80">
@@ -136,7 +135,7 @@
           <el-button type="primary" :icon="Plus" @click="showCreateDialog">新建数据集</el-button>
         </div>
 
-        <el-table :data="datasets" v-loading="loadingDatasets" border stripe>
+        <el-table :data="datasets" v-loading="loadingDatasets" stripe>
           <el-table-column prop="name" label="名称" />
           <el-table-column prop="description" label="描述" show-overflow-tooltip />
           <el-table-column label="条目数" width="100">
@@ -149,9 +148,9 @@
           </el-table-column>
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" :icon="View" @click="handleViewDataset(row)">查看</el-button>
-              <el-button size="small" type="primary" :icon="DataAnalysis" @click="handleRunDataset(row)">运行评估</el-button>
-              <el-button size="small" type="danger" :icon="Delete" @click="handleDeleteDataset(row)">删除</el-button>
+              <el-button link type="primary" size="small" :icon="View" @click="handleViewDataset(row)">查看</el-button>
+              <el-button link type="primary" size="small" :icon="DataAnalysis" @click="handleRunDataset(row)">运行评估</el-button>
+              <el-button link type="danger" size="small" :icon="Delete" @click="handleDeleteDataset(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -174,14 +173,14 @@
         </el-descriptions>
         <el-divider />
         <h4>问题</h4>
-        <p style="white-space: pre-wrap; background: #f5f7fa; padding: 12px; border-radius: 4px;">{{ selectedResult.question }}</p>
+        <p style="white-space: pre-wrap; background: var(--el-fill-color); padding: 12px; border-radius: 4px;">{{ selectedResult.question }}</p>
         <h4>回答</h4>
-        <p style="white-space: pre-wrap; background: #f5f7fa; padding: 12px; border-radius: 4px;">{{ selectedResult.answer }}</p>
+        <p style="white-space: pre-wrap; background: var(--el-fill-color); padding: 12px; border-radius: 4px;">{{ selectedResult.answer }}</p>
         <h4>说明</h4>
-        <p style="white-space: pre-wrap; background: #f5f7fa; padding: 12px; border-radius: 4px;">{{ selectedResult.explanation }}</p>
+        <p style="white-space: pre-wrap; background: var(--el-fill-color); padding: 12px; border-radius: 4px;">{{ selectedResult.explanation }}</p>
         <div v-if="selectedResult.details">
           <h4>详细信息</h4>
-          <p style="white-space: pre-wrap; background: #f5f7fa; padding: 12px; border-radius: 4px;">{{ selectedResult.details }}</p>
+          <p style="white-space: pre-wrap; background: var(--el-fill-color); padding: 12px; border-radius: 4px;">{{ selectedResult.details }}</p>
         </div>
       </template>
     </el-drawer>
@@ -189,8 +188,8 @@
     <!-- Dataset Detail Dialog -->
     <el-dialog v-model="datasetDetailVisible" :title="'数据集: ' + currentDataset?.name" width="700px">
       <template v-if="currentDataset">
-        <p v-if="currentDataset.description" style="margin-bottom: 16px; color: #909399;">{{ currentDataset.description }}</p>
-        <el-table :data="parsedItems(currentDataset.items)" size="small" border stripe>
+        <p v-if="currentDataset.description" style="margin-bottom: 16px; color: var(--ink-text-secondary);">{{ currentDataset.description }}</p>
+        <el-table :data="parsedItems(currentDataset.items)" size="small" stripe>
           <el-table-column type="index" label="#" width="50" />
           <el-table-column prop="question" label="问题" show-overflow-tooltip />
           <el-table-column prop="context" label="上下文" show-overflow-tooltip />
@@ -210,7 +209,7 @@
         </el-form-item>
         <el-form-item label="条目">
           <div style="width: 100%;">
-            <div v-for="(item, idx) in createForm.items" :key="idx" style="border: 1px solid #ebeef5; border-radius: 4px; padding: 12px; margin-bottom: 12px;">
+            <div v-for="(item, idx) in createForm.items" :key="idx" style="border: 1px solid var(--el-border-color-lighter); border-radius: 4px; padding: 12px; margin-bottom: 12px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                 <strong>条目 {{ idx + 1 }}</strong>
                 <el-button size="small" type="danger" link :icon="Delete" @click="removeItem(idx)">移除</el-button>
@@ -234,7 +233,7 @@
         <el-button type="primary" @click="handleCreateDataset" :loading="creating">创建</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
@@ -242,6 +241,9 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataAnalysis, Delete, Plus, View } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import {
   getEvaluators,
   evaluate,
@@ -259,6 +261,7 @@ import {
   type EvaluationDataset,
   type EvaluationStats
 } from '@/api/evaluation'
+import { formatDateTime } from '@/utils/format'
 
 const activeTab = ref('online')
 
@@ -340,13 +343,13 @@ function handleRowClick(row: EvaluationResult) {
 }
 
 async function handleClearResults() {
+  if (!await confirmDelete('全部评估结果', '清除确认')) return
   try {
-    await ElMessageBox.confirm('确定清除全部评估结果？此操作不可恢复。', '确认', { type: 'warning' })
     await clearResults()
     ElMessage.success('已清除全部结果')
     await loadResults()
-  } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error('清除失败')
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -469,20 +472,19 @@ async function handleRunDataset(row: EvaluationDataset) {
 }
 
 async function handleDeleteDataset(row: EvaluationDataset) {
+  if (!await confirmDelete(`数据集「${row.name}」`)) return
   try {
-    await ElMessageBox.confirm(`确定删除数据集「${row.name}」？`, '确认', { type: 'warning' })
     await deleteDataset(row.id!)
     ElMessage.success('数据集已删除')
     await loadDatasets()
-  } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
 // ========== Helpers ==========
-function formatTime(s?: string) {
-  if (!s) return ''
-  return s.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : ''
 }
 
 // ========== Lifecycle ==========
@@ -500,14 +502,14 @@ onMounted(() => {
 
 .stat-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-bottom: 8px;
 }
 
 .stat-value {
   font-size: 28px;
   font-weight: bold;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .eval-card {
@@ -530,9 +532,9 @@ onMounted(() => {
 }
 
 .eval-evaluator-name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .eval-score-section {
@@ -547,7 +549,7 @@ onMounted(() => {
 
 .eval-explanation {
   font-size: 13px;
-  color: #606266;
+  color: var(--ink-text-regular);
   line-height: 1.6;
   max-height: 80px;
   overflow-y: auto;

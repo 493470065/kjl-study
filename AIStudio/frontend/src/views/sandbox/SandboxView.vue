@@ -1,9 +1,8 @@
 <template>
-  <div class="sandbox-view">
-    <div class="page-header">
-      <h2>沙箱管理</h2>
+  <page-container title="沙箱管理" no-card>
+    <template #actions>
       <el-button @click="loadData">刷新</el-button>
-    </div>
+    </template>
 
     <el-card class="status-card">
       <template #header>
@@ -34,20 +33,13 @@
         <el-table-column prop="status" label="状态">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)" size="small">
-              {{ row.status }}
+              {{ getStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
-            <el-popconfirm
-              title="确定销毁此沙箱？"
-              @confirm="handleDestroy(row.taskId)"
-            >
-              <template #reference>
-                <el-button size="small" type="danger">销毁</el-button>
-              </template>
-            </el-popconfirm>
+            <el-button size="small" type="danger" @click="handleDestroy(row.taskId)">销毁</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -78,25 +70,23 @@
         </ul>
       </div>
     </el-card>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useStatusTag } from '@/composables/useStatusTag'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { sandboxApi, SandboxInfo, SandboxStatus } from '@/api/sandbox'
 
 const sandboxStatus = ref<SandboxStatus>({ enabled: false })
 const activeSandboxes = ref<SandboxInfo[]>([])
 
-function getStatusType(status: string): 'success' | 'warning' | 'danger' | 'info' {
-  switch (status) {
-    case 'RUNNING': return 'success'
-    case 'CREATING': return 'warning'
-    case 'ERROR': return 'danger'
-    default: return 'info'
-  }
-}
+// 状态徽章统一走全站映射（修正原 RUNNING=success 的语义错误）
+const { statusType: getStatusType, statusLabel: getStatusLabel } = useStatusTag()
 
 async function loadData() {
   try {
@@ -110,12 +100,13 @@ async function loadData() {
 }
 
 async function handleDestroy(taskId: string) {
+  if (!await confirmDelete('该沙箱', '销毁确认')) return
   try {
     await sandboxApi.destroySandbox(taskId)
     ElMessage.success('沙箱已销毁')
     await loadData()
-  } catch (e: any) {
-    ElMessage.error('销毁失败')
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -127,17 +118,7 @@ onMounted(loadData)
   padding: 20px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
 
-.page-header h2 {
-  margin: 0;
-  font-size: 18px;
-}
 
 .status-card, .active-card, .config-card {
   margin-bottom: 16px;
@@ -152,7 +133,7 @@ onMounted(loadData)
 .hint {
   margin-top: 12px;
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 4px;
   color: #666;
   font-size: 13px;
@@ -172,9 +153,9 @@ onMounted(loadData)
 }
 
 .build-hint {
-  font-family: monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px;
-  color: #999;
+  color: var(--ink-text-secondary);
   margin-left: 8px;
 }
 </style>

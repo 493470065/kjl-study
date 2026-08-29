@@ -1,11 +1,10 @@
 <template>
-  <div class="settings-view">
-    <div class="page-header">
-      <h2>系统配置</h2>
+  <page-container title="系统配置" no-card>
+    <template #actions>
       <el-button type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon> 添加配置
       </el-button>
-    </div>
+    </template>
 
     <el-tabs v-model="activeGroup" @tab-change="loadConfigs">
       <el-tab-pane label="全部" name="" />
@@ -20,7 +19,8 @@
         <template #default="{ row }">
           <span v-if="isSensitive(row.configKey)" class="sensitive-value">
             {{ showValues[row.configKey] ? row.configValue : '••••••••' }}
-            <el-button link size="small" @click="showValues[row.configKey] = !showValues[row.configKey]">
+            <el-button link size="small" :aria-label="showValues[row.configKey] ? '隐藏敏感值' : '显示敏感值'"
+                       @click="showValues[row.configKey] = !showValues[row.configKey]">
               <el-icon>
                 <View v-if="!showValues[row.configKey]" />
                 <Hide v-else />
@@ -45,11 +45,11 @@
     </el-table>
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑配置' : '添加配置'" width="500px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="配置键">
+      <el-form ref="formRef" :model="form" :rules="configRules" label-width="80px">
+        <el-form-item label="配置键" prop="configKey">
           <el-input v-model="form.configKey" :disabled="isEdit" placeholder="如 wxp.usercode" />
         </el-form-item>
-        <el-form-item label="配置值">
+        <el-form-item label="配置值" prop="configValue">
           <el-input v-model="form.configValue" type="textarea" :rows="3" placeholder="配置值" />
         </el-form-item>
         <el-form-item label="描述">
@@ -68,17 +68,26 @@
         <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { Plus, View, Hide } from '@element-plus/icons-vue'
 import { listConfigs, saveConfig, deleteConfig, type SystemConfig } from '@/api/systemConfig'
 
 const loading = ref(false)
 const saving = ref(false)
+const formRef = ref<FormInstance>()
+const configRules: FormRules = {
+  configKey: [{ required: true, message: '请输入配置键', trigger: 'blur' }],
+  configValue: [{ required: true, message: '请输入配置值', trigger: 'blur' }]
+}
 const configs = ref<SystemConfig[]>([])
 const activeGroup = ref('')
 const dialogVisible = ref(false)
@@ -128,10 +137,8 @@ function handleEdit(row: SystemConfig) {
 }
 
 async function handleSave() {
-  if (!form.configKey || !form.configValue) {
-    ElMessage.warning('配置键和配置值不能为空')
-    return
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     await saveConfig({ ...form })
@@ -146,15 +153,13 @@ async function handleSave() {
 }
 
 async function handleDelete(row: SystemConfig) {
+  if (!await confirmDelete(`配置 "${row.configKey}"`, '确认删除')) return
   try {
-    await ElMessageBox.confirm(`确定删除配置 "${row.configKey}" ?`, '确认删除', { type: 'warning' })
     await deleteConfig(row.id!)
     ElMessage.success('已删除')
     await loadConfigs()
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error('删除失败')
-    }
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -162,27 +167,16 @@ onMounted(() => loadConfigs())
 </script>
 
 <style scoped>
+/* 页边距统一交给 el-main（24px），此处不私加 padding */
 .settings-view {
-  padding: 20px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
 
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-}
 
 .sensitive-value {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-family: monospace;
+  font-family: var(--app-font-mono);
 }
 </style>

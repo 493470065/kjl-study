@@ -3,9 +3,9 @@ chcp 65001 >nul
 setlocal
 REM MySQL 安装目录：可通过系统环境变量 MYSQL_HOME 覆盖（新电脑路径不同时设置它即可）
 if not defined MYSQL_HOME set "MYSQL_HOME=E:\KjlStudy\mysql"
-title 景磊的AI乐园站 - 启动
+title 景磊的AI工作站 - 启动
 echo ============================================
-echo   景磊的AI乐园站 启动
+echo   景磊的AI工作站 启动
 echo   MySQL : localhost:3306  库 racc
 echo   前端  : http://localhost:8090
 echo   后端  : http://localhost:8091

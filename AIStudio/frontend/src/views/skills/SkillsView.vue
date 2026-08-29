@@ -15,13 +15,17 @@
           v-for="skill in skillList"
           :key="skill.name"
           :class="['skill-card', { active: selectedSkillName === skill.name, disabled: skill.disabled }]"
+          role="button"
+          tabindex="0"
+          :aria-label="'选择 Skill：' + skill.name"
           @click="selectSkill(skill.name)"
+          @keydown.enter.prevent="selectSkill(skill.name)"
           @contextmenu.prevent="openContextMenu($event, skill.name)"
         >
           <div class="skill-card__header">
             <span class="skill-card__name">{{ skill.name }}</span>
             <el-tag v-if="skill.version" size="small" type="info">{{ skill.version }}</el-tag>
-            <el-tag v-if="skill.commitId" size="small" type="info" style="margin-left: 4px; font-family: monospace">
+            <el-tag v-if="skill.commitId" size="small" type="info" style="margin-left: 4px; font-family: var(--app-font-mono);">
               <el-tooltip :content="skill.commitId" placement="top">
                 {{ skill.commitId.substring(0, 7) }}
               </el-tooltip>
@@ -156,15 +160,16 @@
     >
       <!-- 更新 (git pull) 暂隐藏：该功能仅对 git 仓库技能有效，zip 上传的技能无意义 -->
       <div class="ctx-menu__divider" />
-      <div class="ctx-menu__item ctx-menu__item--danger" @click="handleDelete(contextMenuSkill)">
+      <div class="ctx-menu__item ctx-menu__item--danger" role="menuitem" tabindex="0"
+           @click="handleDelete(contextMenuSkill)" @keydown.enter.prevent="handleDelete(contextMenuSkill)">
         <el-icon><Delete /></el-icon> 删除
       </div>
     </div>
 
     <!-- Create Dialog -->
     <el-dialog v-model="createDialogVisible" title="新建 Skill" width="420px">
-      <el-form @submit.prevent="submitCreate">
-        <el-form-item label="名称">
+      <el-form ref="createFormRef" :model="createFormModel" :rules="skillNameRules" @submit.prevent="submitCreate">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="createName" placeholder="Skill 名称（英文，如 my-skill）" />
         </el-form-item>
       </el-form>
@@ -176,11 +181,11 @@
 
     <!-- Upload Zip Dialog -->
     <el-dialog v-model="uploadDialogVisible" title="上传 Skill (Zip)" width="480px">
-      <el-form label-width="80px" @submit.prevent="submitUpload">
-        <el-form-item label="名称">
+      <el-form ref="uploadFormRef" :model="uploadFormModel" :rules="uploadRules" label-width="80px" @submit.prevent="submitUpload">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="uploadName" placeholder="Skill 名称（英文，如 my-skill）" />
         </el-form-item>
-        <el-form-item label="Zip 文件">
+        <el-form-item label="Zip 文件" prop="file">
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
@@ -208,11 +213,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, markRaw, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import {
   Folder, Document, Refresh, Delete, Connection, Clock, Link, ArrowDown
 } from '@element-plus/icons-vue'
 import { skillApi, type SkillSummary, type FileTreeNode } from '@/api/skill'
 import { useMarkdown } from '@/composables/useMarkdown'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 
 // ── Markdown ──────────────────────────────────────────────────────────────────
 const { renderMarkdown } = useMarkdown()
@@ -241,6 +250,23 @@ const treeProps = { children: 'children', label: 'name', isLeaf: (node: FileTree
 // ── Dialogs ───────────────────────────────────────────────────────────────────
 const createDialogVisible = ref(false)
 const createName = ref('')
+const createFormRef = ref<FormInstance>()
+const uploadFormRef = ref<FormInstance>()
+const createFormModel = computed(() => ({ name: createName.value }))
+const uploadFormModel = computed(() => ({ name: uploadName.value, file: uploadFile.value }))
+const skillNameRules: FormRules = {
+  name: [{ required: true, message: '请输入 Skill 名称', trigger: 'blur' }]
+}
+const uploadRules: FormRules = {
+  name: [{ required: true, message: '请输入 Skill 名称', trigger: 'blur' }],
+  file: [{
+    validator: (_rule: any, value: any, callback: any) => {
+      if (!value) callback(new Error('请选择 Zip 文件'))
+      else callback()
+    },
+    trigger: 'change'
+  }]
+}
 const creating = ref(false)
 
 const uploadDialogVisible = ref(false)
@@ -402,11 +428,9 @@ async function saveFile() {
 
 // ── Create Skill ──────────────────────────────────────────────────────────────
 async function submitCreate() {
+  const valid = await createFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   const name = createName.value.trim()
-  if (!name) {
-    ElMessage.warning('请输入 Skill 名称')
-    return
-  }
   creating.value = true
   try {
     await skillApi.createSkill({ name })
@@ -434,15 +458,9 @@ function onUploadFileRemove() {
 }
 
 async function submitUpload() {
+  const valid = await uploadFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   const name = uploadName.value.trim()
-  if (!name) {
-    ElMessage.warning('请输入 Skill 名称')
-    return
-  }
-  if (!uploadFile.value) {
-    ElMessage.warning('请选择 Zip 文件')
-    return
-  }
   uploading.value = true
   try {
     const result = await skillApi.uploadSkill(name, uploadFile.value)
@@ -497,12 +515,8 @@ async function handleDelete(name?: string) {
   const target = name || selectedSkillName.value
   if (!target) return
   contextMenuVisible.value = false
+  if (!await confirmDelete(`Skill "${target}"`, '删除 Skill')) return
   try {
-    await ElMessageBox.confirm(`确定要删除 Skill "${target}" 吗？此操作不可恢复。`, '删除 Skill', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
     await skillApi.deleteSkill(target)
     ElMessage.success('已删除')
     if (selectedSkillName.value === target) {
@@ -514,7 +528,7 @@ async function handleDelete(name?: string) {
     }
     await loadSkillList()
   } catch {
-    // cancelled or failed
+    ElMessage.error('删除失败，请稍后重试')
   }
 }
 
@@ -579,8 +593,8 @@ onBeforeUnmount(() => {
   height: calc(100vh - 200px);
   min-height: 500px;
   gap: 1px;
-  background: #e4e7ed;
-  border: 1px solid #e4e7ed;
+  background: var(--paper-border);
+  border: 1px solid var(--paper-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -612,7 +626,7 @@ onBeforeUnmount(() => {
 /* ── Left Panel: Skill List ────────────────────────────────────────────────── */
 .panel-header {
   padding: 10px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -637,12 +651,12 @@ onBeforeUnmount(() => {
 }
 
 .skill-card:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .skill-card.active {
-  background: #ecf5ff;
-  border-color: #409eff;
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
 }
 
 .skill-card__header {
@@ -655,7 +669,7 @@ onBeforeUnmount(() => {
 .skill-card__name {
   font-weight: 600;
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -664,7 +678,7 @@ onBeforeUnmount(() => {
 
 .skill-card__desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -672,18 +686,18 @@ onBeforeUnmount(() => {
 }
 
 .skill-card__desc--empty {
-  color: #c0c4cc;
+  color: #b8b1a0;
   font-style: italic;
 }
 
 .skill-card.disabled {
   opacity: 0.5;
-  background: #f5f5f5;
+  background: var(--el-border-color-extra-light);
 }
 
 .skill-card.disabled .skill-card__name {
   text-decoration: line-through;
-  color: #999;
+  color: var(--ink-text-secondary);
 }
 
 .skill-card__actions {
@@ -695,7 +709,7 @@ onBeforeUnmount(() => {
 /* ── Middle Panel: Git Info + File Tree ────────────────────────────────────── */
 .git-info {
   padding: 10px 12px 6px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -704,12 +718,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: #606266;
+  color: var(--ink-text-regular);
   margin-bottom: 5px;
 }
 
 .git-info__label {
-  color: #909399;
+  color: var(--ink-text-secondary);
   flex-shrink: 0;
 }
 
@@ -720,8 +734,8 @@ onBeforeUnmount(() => {
 }
 
 .git-info__commit {
-  font-family: 'Consolas', 'Monaco', monospace;
-  color: #409eff;
+  font-family: var(--app-font-mono);
+  color: var(--el-color-primary);
 }
 
 .git-info__url {
@@ -730,7 +744,7 @@ onBeforeUnmount(() => {
 
 .tree-actions {
   padding: 4px 8px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
@@ -774,15 +788,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 
 .editor__path {
   font-size: 13px;
-  color: #606266;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--ink-text-regular);
+  font-family: var(--app-font-mono);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -811,16 +825,16 @@ onBeforeUnmount(() => {
   outline: none;
   resize: none;
   padding: 16px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
   line-height: 1.7;
-  color: #303133;
+  color: var(--ink-text);
   background: #fff;
   tab-size: 2;
 }
 
 .editor__textarea::placeholder {
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .editor__preview {
@@ -829,7 +843,7 @@ onBeforeUnmount(() => {
   height: 100%;
   font-size: 14px;
   line-height: 1.7;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .editor-placeholder {
@@ -849,7 +863,7 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 9999;
   background: #fff;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--paper-border);
   border-radius: 6px;
   padding: 4px 0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -859,7 +873,7 @@ onBeforeUnmount(() => {
 .ctx-menu__item {
   padding: 8px 16px;
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -868,7 +882,7 @@ onBeforeUnmount(() => {
 }
 
 .ctx-menu__item:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .ctx-menu__item--danger {
@@ -881,7 +895,7 @@ onBeforeUnmount(() => {
 
 .ctx-menu__divider {
   height: 1px;
-  background: #ebeef5;
+  background: var(--el-border-color-lighter);
   margin: 4px 0;
 }
 
@@ -895,13 +909,13 @@ onBeforeUnmount(() => {
 .skill-list::-webkit-scrollbar-thumb,
 .file-tree::-webkit-scrollbar-thumb,
 .editor__preview::-webkit-scrollbar-thumb {
-  background: #dcdfe6;
+  background: var(--el-border-color);
   border-radius: 3px;
 }
 
 .skill-list::-webkit-scrollbar-thumb:hover,
 .file-tree::-webkit-scrollbar-thumb:hover,
 .editor__preview::-webkit-scrollbar-thumb:hover {
-  background: #c0c4cc;
+  background: #b8b1a0;
 }
 </style>

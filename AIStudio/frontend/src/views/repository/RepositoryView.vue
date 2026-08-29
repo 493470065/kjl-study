@@ -15,7 +15,11 @@
             v-for="repo in displayRepositories"
             :key="repo.id"
             :class="['repo-card', { active: docsModeRepo?.id === repo.id }]"
+            role="button"
+            tabindex="0"
+            :aria-label="'选择仓库：' + repo.displayName"
             @click="selectRepoForDocs(repo)"
+            @keydown.enter.prevent="selectRepoForDocs(repo)"
           >
             <div class="repo-card__header">
               <span class="repo-card__name">{{ repo.displayName }}</span>
@@ -114,9 +118,8 @@
 
     <!-- Normal table view when docs mode is not active -->
     <template v-else>
-      <div class="page-header">
-        <h2>仓库管理</h2>
-        <div class="toolbar">
+      <page-container title="仓库管理" no-card>
+        <template #toolbar>
           <el-input
             v-model="searchText"
             placeholder="搜索仓库名/英文名"
@@ -131,6 +134,8 @@
           <el-select v-model="filterProductLineIds" placeholder="产品线筛选（可多选）" clearable multiple collapse-tags collapse-tags-tooltip style="width: 260px" @change="loadData">
             <el-option v-for="pl in productLines" :key="pl.id" :label="pl.displayName" :value="pl.id" />
           </el-select>
+        </template>
+        <template #actions>
           <el-button :icon="Refresh" @click="loadData">刷新</el-button>
           <el-button type="primary" :icon="Plus" @click="handleAdd">新增</el-button>
           <el-dropdown @command="handleSyncCommand">
@@ -143,8 +148,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-        </div>
-      </div>
+        </template>
 
       <!-- 主表格 -->
       <el-table :data="displayRepositories" stripe style="width: 100%" v-loading="loading">
@@ -209,12 +213,24 @@
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="warning" size="small" @click="handleDocs(row)">文档</el-button>
-            <el-button link type="info" size="small" @click="handleEditClaudeMd(row)">CLAUDE.md</el-button>
-            <el-button link type="primary" size="small" @click="handleModules(row)">子模块</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
+              <el-button link size="small">
+                更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="claudemd">CLAUDE.md</el-dropdown-item>
+                  <el-dropdown-item command="modules">子模块</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>
+                    <span style="color: var(--el-color-danger)">删除</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
+      </page-container>
     </template>
 
     <!-- 仓库编辑弹窗 -->
@@ -224,14 +240,14 @@
       width="600px"
       @close="resetRepoForm"
     >
-      <el-form :model="repoForm" label-width="120px">
-        <el-form-item label="仓库中文名" required>
+      <el-form ref="repoFormRef" :model="repoForm" :rules="repoRules" label-width="120px">
+        <el-form-item label="仓库中文名" prop="displayName">
           <el-input v-model="repoForm.displayName" placeholder="请输入仓库中文名" />
         </el-form-item>
-        <el-form-item label="仓库英文名" required>
+        <el-form-item label="仓库英文名" prop="name">
           <el-input v-model="repoForm.name" placeholder="请输入仓库英文名" />
         </el-form-item>
-        <el-form-item label="TFS 路径" required>
+        <el-form-item label="TFS 路径" prop="tfsPath">
           <el-input v-model="repoForm.tfsPath" placeholder="请输入 TFS 路径" />
         </el-form-item>
         <el-form-item label="分支版本">
@@ -274,7 +290,7 @@
     <!-- 子模块管理弹窗 -->
     <el-dialog v-model="moduleDialogVisible" title="子模块管理" width="820px" @close="moduleDialogVisible = false">
       <div style="margin-bottom: 12px">
-        <span style="color: #606266">当前仓库：</span>
+        <span style="color: var(--ink-text-regular)">当前仓库：</span>
         <strong>{{ currentRepoName }}</strong>
       </div>
 
@@ -345,7 +361,11 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Refresh, ArrowDown, Folder, Document } from '@element-plus/icons-vue'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import {
   listRepositories,
   getRepository,
@@ -412,6 +432,12 @@ function defaultRepoForm(): CodeRepository {
 }
 
 const repoForm = reactive<CodeRepository>(defaultRepoForm())
+const repoFormRef = ref<FormInstance>()
+const repoRules: FormRules = {
+  displayName: [{ required: true, message: '请输入仓库中文名', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入仓库英文名', trigger: 'blur' }],
+  tfsPath: [{ required: true, message: '请输入 TFS 路径', trigger: 'blur' }]
+}
 const repoFormProductLineIds = ref<number[]>([])
 
 // 子模块弹窗
@@ -479,10 +505,8 @@ function resetRepoForm() {
 }
 
 async function handleSaveRepo() {
-  if (!repoForm.displayName || !repoForm.name || !repoForm.tfsPath) {
-    ElMessage.warning('中文名、英文名和 TFS 路径为必填项')
-    return
-  }
+  const valid = await repoFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     const payload: CodeRepository = {
@@ -507,16 +531,21 @@ async function handleSaveRepo() {
   }
 }
 
+/** 行操作「更多」下拉命令分发 */
+function handleRowCommand(command: string, row: CodeRepository) {
+  if (command === 'claudemd') handleEditClaudeMd(row)
+  else if (command === 'modules') handleModules(row)
+  else if (command === 'delete') handleDelete(row)
+}
+
 async function handleDelete(row: CodeRepository) {
+  if (!await confirmDelete(`仓库「${row.displayName}（${row.name}）」`, '确认删除')) return
   try {
-    await ElMessageBox.confirm(`确定删除仓库 "${row.displayName}（${row.name}）"？`, '确认删除', { type: 'warning' })
     await deleteRepository(row.id!)
     ElMessage.success('已删除')
     await loadData()
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error('删除失败')
-    }
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -794,8 +823,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 页边距统一交给 el-main（24px） */
 .repository-view {
-  padding: 20px;
   height: calc(100vh - 110px);
   min-height: 500px;
 }
@@ -805,8 +834,8 @@ onMounted(() => {
   padding: 0;
   display: flex;
   gap: 1px;
-  background: #e4e7ed;
-  border: 1px solid #e4e7ed;
+  background: var(--paper-border);
+  border: 1px solid var(--paper-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -837,7 +866,7 @@ onMounted(() => {
 
 .panel-header {
   padding: 10px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -848,7 +877,7 @@ onMounted(() => {
 
 .panel-footer {
   padding: 8px 12px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -868,12 +897,12 @@ onMounted(() => {
 }
 
 .repo-card:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .repo-card.active {
-  background: #ecf5ff;
-  border-color: #409eff;
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
 }
 
 .repo-card__header {
@@ -886,7 +915,7 @@ onMounted(() => {
 .repo-card__name {
   font-weight: 600;
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -895,7 +924,7 @@ onMounted(() => {
 
 .repo-card__desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -909,7 +938,7 @@ onMounted(() => {
 /* File tree panel */
 .tree-header {
   padding: 10px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -923,7 +952,7 @@ onMounted(() => {
 .tree-header__name {
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .tree-header__path {
@@ -931,7 +960,7 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
 }
 
@@ -944,7 +973,7 @@ onMounted(() => {
 
 .tree-actions {
   padding: 4px 8px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
@@ -987,15 +1016,15 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 
 .editor__path {
   font-size: 13px;
-  color: #606266;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--ink-text-regular);
+  font-family: var(--app-font-mono);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1023,16 +1052,16 @@ onMounted(() => {
   outline: none;
   resize: none;
   padding: 16px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
   line-height: 1.7;
-  color: #303133;
+  color: var(--ink-text);
   background: #fff;
   tab-size: 2;
 }
 
 .editor__textarea::placeholder {
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .editor-placeholder {
@@ -1050,7 +1079,7 @@ onMounted(() => {
 /* Form tip */
 .form-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
 }
 
@@ -1065,7 +1094,7 @@ onMounted(() => {
 .page-header h2 {
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .toolbar {
@@ -1084,7 +1113,7 @@ onMounted(() => {
 }
 
 .text-muted {
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .product-line-checkboxes {
@@ -1100,7 +1129,7 @@ onMounted(() => {
 .add-module-form {
   margin-top: 16px;
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 4px;
 }
 
@@ -1114,11 +1143,11 @@ onMounted(() => {
 .claude-md-editor {
   width: 100%;
   min-height: 500px;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
   line-height: 1.6;
   padding: 12px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--el-border-color);
   border-radius: 4px;
   resize: vertical;
   box-sizing: border-box;
@@ -1132,12 +1161,12 @@ onMounted(() => {
 
 .repo-list::-webkit-scrollbar-thumb,
 .file-tree::-webkit-scrollbar-thumb {
-  background: #dcdfe6;
+  background: var(--el-border-color);
   border-radius: 3px;
 }
 
 .repo-list::-webkit-scrollbar-thumb:hover,
 .file-tree::-webkit-scrollbar-thumb:hover {
-  background: #c0c4cc;
+  background: #b8b1a0;
 }
 </style>

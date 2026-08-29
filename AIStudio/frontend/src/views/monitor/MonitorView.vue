@@ -72,7 +72,7 @@
             <span class="agent-status-indicator">
               <span v-if="row.status === 'RUNNING'" class="status-dot status-dot-pulsing"></span>
               <el-tag :type="agentStatusType(row.status)" size="small">
-                {{ row.status }}
+                {{ statusLabel(row.status) }}
               </el-tag>
             </span>
           </template>
@@ -141,7 +141,7 @@
         </el-table-column>
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="default" @click="handleTestConnection(row)">
+            <el-button link type="primary" size="small" @click="handleTestConnection(row)">
               连接测试
             </el-button>
           </template>
@@ -216,6 +216,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useStatusTag } from '@/composables/useStatusTag'
 import { Monitor, Connection, Cpu, DataAnalysis, Refresh, Timer } from '@element-plus/icons-vue'
 import { getDashboard, type DashboardData, type ProviderStatus } from '@/api/monitor'
 
@@ -269,15 +270,8 @@ const formattedUptime = computed(() => {
 
 const errorStats = computed(() => dashboardData.value?.errors)
 
-function agentStatusType(status: string): 'info' | 'success' | 'warning' | 'danger' {
-  const map: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
-    IDLE: 'info',
-    RUNNING: 'success',
-    WAITING: 'warning',
-    ERROR: 'danger'
-  }
-  return map[status] || 'info'
-}
+// 状态徽章统一走全站映射（修正原 RUNNING=success 的语义错误）
+const { statusType: agentStatusType, statusLabel } = useStatusTag()
 
 function truncateUrl(url: string): string {
   if (!url) return '-'
@@ -361,7 +355,7 @@ onUnmounted(() => {
   gap: 8px;
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
   margin: 0;
 }
 
@@ -376,7 +370,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .section-card {
@@ -388,29 +382,29 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .stat-card {
   padding: 16px;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
   border-radius: 8px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   text-align: center;
 }
 
 .stat-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-bottom: 8px;
 }
 
 .stat-value {
   font-size: 22px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -458,20 +452,20 @@ onUnmounted(() => {
 }
 
 .task-id {
-  font-family: monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .base-url-text {
-  font-family: monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
-  color: #606266;
+  color: var(--ink-text-regular);
   cursor: help;
 }
 
 .text-muted {
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .error-count {

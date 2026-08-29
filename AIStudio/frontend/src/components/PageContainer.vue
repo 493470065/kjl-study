@@ -8,6 +8,11 @@
       </div>
     </div>
 
+    <!-- 筛选/工具条区（搜索框、下拉筛选等） -->
+    <div v-if="$slots.toolbar" class="page-toolbar">
+      <slot name="toolbar" />
+    </div>
+
     <!-- 页面内容 -->
     <div class="page-body" :class="{ 'no-card': noCard }">
       <slot />
@@ -18,13 +23,15 @@
 <script setup lang="ts">
 const props = defineProps<{
   title?: string
+  /** 不包卡片壳，内容直接铺在页面上（列表/三栏布局常用） */
   noCard?: boolean
 }>()
 </script>
 
 <style scoped>
+/* 全宽自适应：页面横向铺满 el-main，与原各页面行为一致 */
 .page-container {
-  max-width: 1400px;
+  width: 100%;
 }
 
 .page-header {
@@ -37,8 +44,9 @@ const props = defineProps<{
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ink-text, var(--ink));
   margin: 0;
+  letter-spacing: 0.5px;
 }
 
 .page-actions {
@@ -47,12 +55,20 @@ const props = defineProps<{
   gap: 8px;
 }
 
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
 .page-body:not(.no-card) {
-  background: #fff;
+  background: var(--paper-card, #fff);
   border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 3px rgba(44, 42, 38, 0.06);
+  border: 1px solid var(--paper-border, var(--paper-light));
 }
 
 .page-body.no-card {

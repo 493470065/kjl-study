@@ -3,9 +3,9 @@ chcp 65001 >nul
 setlocal
 REM MySQL 安装目录：可通过系统环境变量 MYSQL_HOME 覆盖（与 启动平台.bat 保持一致）
 if not defined MYSQL_HOME set "MYSQL_HOME=E:\KjlStudy\mysql"
-title 景磊的AI乐园站 - 停止
+title 景磊的AI工作站 - 停止
 echo ============================================
-echo   景磊的AI乐园站 停止
+echo   景磊的AI工作站 停止
 echo ============================================
 echo.
 

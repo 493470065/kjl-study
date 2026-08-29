@@ -1,18 +1,18 @@
 <template>
-  <div class="team-view">
-    <div class="page-header">
-      <h2>团队协作</h2>
+  <page-container title="团队协作" no-card>
+    <template #actions>
       <el-button type="primary" @click="showCreateWorkspace">新建工作空间</el-button>
-    </div>
+    </template>
 
     <el-row :gutter="20">
       <el-col :span="8">
         <el-card>
           <template #header>工作空间</template>
-          <div v-if="!workspaces.length" class="empty-text">暂无工作空间</div>
+          <el-empty v-if="!workspaces.length" description="暂无工作空间" :image-size="60" />
           <div v-for="ws in workspaces" :key="ws.id"
                class="ws-item" :class="{ active: selectedWs?.id === ws.id }"
-               @click="selectWorkspace(ws)">
+               role="button" tabindex="0" :aria-label="'选择工作空间：' + ws.name"
+               @click="selectWorkspace(ws)" @keydown.enter.prevent="selectWorkspace(ws)">
             <div class="ws-name">{{ ws.name }}</div>
             <div class="ws-meta">{{ ws.memberCount }} 成员 / {{ ws.projectCount }} 项目</div>
           </div>
@@ -27,7 +27,7 @@
               <el-button size="small" type="primary" @click="showAddMember">添加成员</el-button>
             </div>
           </template>
-          <el-table :data="members" border stripe>
+          <el-table :data="members" stripe>
             <el-table-column prop="displayName" label="姓名" />
             <el-table-column prop="username" label="用户名" />
             <el-table-column prop="role" label="角色" width="120">
@@ -57,7 +57,7 @@
               <el-button size="small" type="primary" @click="showCreateProject">新建项目</el-button>
             </div>
           </template>
-          <el-table :data="projects" border stripe>
+          <el-table :data="projects" stripe>
             <el-table-column prop="name" label="名称" />
             <el-table-column prop="description" label="描述" />
             <el-table-column prop="createdAt" label="创建时间" width="180">
@@ -75,8 +75,8 @@
 
     <!-- 新建工作空间对话框 -->
     <el-dialog v-model="wsDialogVisible" title="新建工作空间" width="420px">
-      <el-form :model="wsForm" label-width="80px">
-        <el-form-item label="名称" required>
+      <el-form ref="wsFormRef" :model="wsForm" :rules="nameRequiredRules" label-width="80px">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="wsForm.name" />
         </el-form-item>
         <el-form-item label="描述">
@@ -91,8 +91,8 @@
 
     <!-- 添加成员对话框 -->
     <el-dialog v-model="memberDialogVisible" title="添加成员" width="400px">
-      <el-form :model="memberForm" label-width="80px">
-        <el-form-item label="用户名" required>
+      <el-form ref="memberFormRef" :model="memberForm" :rules="usernameRequiredRules" label-width="80px">
+        <el-form-item label="用户名" prop="username">
           <el-input v-model="memberForm.username" placeholder="输入用户名" />
         </el-form-item>
         <el-form-item label="角色">
@@ -111,8 +111,8 @@
 
     <!-- 新建项目对话框 -->
     <el-dialog v-model="projectDialogVisible" title="新建项目" width="420px">
-      <el-form :model="projectForm" label-width="80px">
-        <el-form-item label="名称" required>
+      <el-form ref="projectFormRef" :model="projectForm" :rules="nameRequiredRules" label-width="80px">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="projectForm.name" />
         </el-form-item>
         <el-form-item label="描述">
@@ -124,13 +124,18 @@
         <el-button type="primary" @click="createProject">创建</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { teamApi, type Workspace, type TeamMember, type Project } from '@/api/team'
+import { formatDateTime } from '@/utils/format'
 
 const workspaces = ref<Workspace[]>([])
 const selectedWs = ref<Workspace | null>(null)
@@ -144,10 +149,18 @@ const projectDialogVisible = ref(false)
 const wsForm = reactive({ name: '', description: '' })
 const memberForm = reactive({ username: '', role: 'DEVELOPER' })
 const projectForm = reactive({ name: '', description: '' })
+const wsFormRef = ref<FormInstance>()
+const memberFormRef = ref<FormInstance>()
+const projectFormRef = ref<FormInstance>()
+const nameRequiredRules: FormRules = {
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }]
+}
+const usernameRequiredRules: FormRules = {
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }]
+}
 
-function formatTime(s?: string) {
-  if (!s) return ''
-  return s.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : ''
 }
 
 async function loadWorkspaces() {
@@ -176,7 +189,8 @@ function showCreateWorkspace() {
 }
 
 async function createWorkspace() {
-  if (!wsForm.name.trim()) { ElMessage.warning('请输入名称'); return }
+  const valid = await wsFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   try {
     const ws = await teamApi.createWorkspace({ name: wsForm.name, description: wsForm.description })
     wsDialogVisible.value = false
@@ -193,7 +207,8 @@ function showAddMember() {
 }
 
 async function addMember() {
-  if (!memberForm.username.trim()) { ElMessage.warning('请输入用户名'); return }
+  const valid = await memberFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   try {
     await teamApi.addMember(selectedWs.value!.id, { username: memberForm.username, role: memberForm.role })
     memberDialogVisible.value = false
@@ -210,12 +225,14 @@ async function updateMemberRole(member: TeamMember) {
 }
 
 async function removeMember(member: TeamMember) {
+  if (!await confirmDelete(`成员 ${member.displayName || member.username}`, '移除成员')) return
   try {
-    await ElMessageBox.confirm(`确定移除 ${member.displayName || member.username}？`, '确认')
     await teamApi.removeMember(selectedWs.value!.id, member.id)
     await loadMembers()
     ElMessage.success('已移除')
-  } catch {}
+  } catch {
+    // 接口错误已由统一错误出口提示
+  }
 }
 
 function showCreateProject() {
@@ -225,7 +242,8 @@ function showCreateProject() {
 }
 
 async function createProject() {
-  if (!projectForm.name.trim()) { ElMessage.warning('请输入名称'); return }
+  const valid = await projectFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   try {
     await teamApi.createProject({ name: projectForm.name, description: projectForm.description, workspaceId: selectedWs.value!.id })
     projectDialogVisible.value = false
@@ -236,13 +254,15 @@ async function createProject() {
 }
 
 async function deleteProject(project: Project) {
+  if (!await confirmDelete(`项目 "${project.name}"`)) return
   try {
-    await ElMessageBox.confirm(`确定删除项目 "${project.name}"？`, '确认')
     await teamApi.deleteProject(project.id)
     await loadProjects()
     await loadWorkspaces()
     ElMessage.success('已删除')
-  } catch {}
+  } catch {
+    // 接口错误已由统一错误出口提示
+  }
 }
 
 onMounted(loadWorkspaces)
@@ -250,13 +270,11 @@ onMounted(loadWorkspaces)
 
 <style scoped>
 .team-view { padding: 0; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-header h2 { font-size: 18px; font-weight: 600; color: #303133; }
-.ws-item { padding: 12px; border-radius: 6px; cursor: pointer; margin-bottom: 8px; border: 1px solid #ebeef5; }
-.ws-item:hover { background: #f5f7fa; }
-.ws-item.active { border-color: #409eff; background: #ecf5ff; }
+.ws-item { padding: 12px; border-radius: 6px; cursor: pointer; margin-bottom: 8px; border: 1px solid var(--el-border-color-lighter); }
+.ws-item:hover { background: var(--el-fill-color); }
+.ws-item.active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
 .ws-name { font-weight: 600; font-size: 14px; }
-.ws-meta { font-size: 12px; color: #909399; margin-top: 4px; }
-.empty-text { text-align: center; color: #909399; padding: 20px; }
+.ws-meta { font-size: 12px; color: var(--ink-text-secondary); margin-top: 4px; }
+.empty-text { text-align: center; color: var(--ink-text-secondary); padding: 20px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 </style>

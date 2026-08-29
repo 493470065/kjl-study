@@ -38,7 +38,11 @@
           v-for="page in wikiPages"
           :key="page.id"
           class="kv-wiki-card"
+          role="button"
+          tabindex="0"
+          :aria-label="'查看 Wiki：' + page.title"
           @click="$emit('open-wiki-detail', page)"
+          @keydown.enter.prevent="$emit('open-wiki-detail', page)"
         >
           <div class="kv-wiki-card__header">
             <span class="kv-wiki-card__title">{{ page.title }}</span>
@@ -74,16 +78,7 @@
             >
               重新生成
             </el-button>
-            <el-popconfirm
-              title="确定要删除该 Wiki 页面吗？"
-              confirm-button-text="删除"
-              cancel-button-text="取消"
-              @confirm="$emit('delete-wiki', page.id)"
-            >
-              <template #reference>
-                <el-button type="danger" text size="small" @click.stop>删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-button type="danger" link size="small" @click.stop="$emit('delete-wiki', page.id)">删除</el-button>
           </div>
         </div>
       </div>
@@ -95,6 +90,7 @@
 import { Document } from '@element-plus/icons-vue'
 import type { WikiPage } from '@/api/wiki'
 import type { KnowledgeDocument } from '@/api/knowledge'
+import { useStatusTag } from '@/composables/useStatusTag'
 
 defineProps<{
   wikiPages: WikiPage[]
@@ -119,25 +115,8 @@ function parseWikiConcepts(concepts: string): string[] {
   return concepts.split(/[,，]/).map(c => c.trim()).filter(Boolean)
 }
 
-function getWikiStatusType(status: string): 'success' | 'warning' | 'danger' | 'primary' | 'info' {
-  const typeMap: Record<string, 'success' | 'warning' | 'danger' | 'primary' | 'info'> = {
-    GENERATED: 'success',
-    GENERATING: 'warning',
-    FAILED: 'danger',
-    GRAPH_READY: 'primary'
-  }
-  return typeMap[status] || 'info'
-}
-
-function getWikiStatusLabel(status: string): string {
-  const labelMap: Record<string, string> = {
-    GENERATED: '已生成',
-    GENERATING: '生成中',
-    FAILED: '失败',
-    GRAPH_READY: '图谱就绪'
-  }
-  return labelMap[status] || status
-}
+// 状态徽章统一走全站映射（useStatusTag），不再与 KnowledgeView 重复定义
+const { statusType: getWikiStatusType, statusLabel: getWikiStatusLabel } = useStatusTag()
 
 function truncate(text: string | undefined, maxLen: number): string {
   if (!text) return ''

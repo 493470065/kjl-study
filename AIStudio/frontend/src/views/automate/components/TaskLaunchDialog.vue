@@ -138,7 +138,7 @@ async function handleLaunch() {
 
 <style scoped>
 .launch-desc {
-  color: #909399;
+  color: var(--ink-text-secondary);
   font-size: 13px;
   margin-bottom: 16px;
   line-height: 1.6;

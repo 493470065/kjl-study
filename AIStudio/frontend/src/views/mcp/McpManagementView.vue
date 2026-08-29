@@ -1,5 +1,5 @@
 <template>
-  <page-container title="MCP Server 管理">
+  <page-container title="MCP 管理">
     <template #actions>
       <el-button type="primary" @click="showUploadDialog = true">
         <el-icon><Upload /></el-icon> 上传 MCP Server
@@ -40,23 +40,22 @@
             </div>
           </div>
 
+          <!-- 操作收敛（规范 §3.1）：高频=启动/停止+修改+详情，低频收进「更多」，7 按钮 → 4 项 -->
           <div class="card-actions">
             <el-button
               v-if="server.status !== 'RUNNING'"
-              type="success"
+              type="primary"
               size="small"
               @click="handleStart(server)"
               :loading="loadingId === server.id"
             >启动</el-button>
             <el-button
-              v-if="server.status === 'RUNNING'"
-              type="warning"
+              v-else
               size="small"
               @click="handleStop(server)"
               :loading="loadingId === server.id"
             >停止</el-button>
             <el-button
-              type="primary"
               size="small"
               @click="openEdit(server)"
             >修改</el-button>
@@ -64,21 +63,20 @@
               size="small"
               @click="openDetail(server)"
             >详情</el-button>
-            <el-button
-              size="small"
-              :loading="testingId === server.id"
-              @click="handleTest(server)"
-            >测试连接</el-button>
-            <el-button
-              v-if="server.status === 'RUNNING'"
-              size="small"
-              @click="showTools(server)"
-            >查看工具</el-button>
-            <el-button
-              type="danger"
-              size="small"
-              @click="handleDelete(server)"
-            >删除</el-button>
+            <el-dropdown trigger="click" @command="(cmd: string) => handleCardCommand(cmd, server)">
+              <el-button size="small">
+                更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="test">测试连接</el-dropdown-item>
+                  <el-dropdown-item v-if="server.status === 'RUNNING'" command="tools">查看工具</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>
+                    <span class="danger-item">删除</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </el-card>
       </el-col>
@@ -88,8 +86,8 @@
 
     <!-- Upload Dialog -->
     <el-dialog v-model="showUploadDialog" title="上传 MCP Server" width="500px">
-      <el-form label-width="80px">
-        <el-form-item label="名称">
+      <el-form ref="uploadFormRef" :model="uploadFormModel" :rules="uploadRules" label-width="80px">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="uploadForm.name" placeholder="例如: mcp-tfs-query" />
         </el-form-item>
         <el-form-item label="显示名">
@@ -98,7 +96,7 @@
         <el-form-item label="描述">
           <el-input v-model="uploadForm.description" type="textarea" placeholder="MCP Server 描述" />
         </el-form-item>
-        <el-form-item label="文件">
+        <el-form-item label="文件" prop="file">
           <el-upload
             :auto-upload="false"
             :limit="1"
@@ -117,7 +115,7 @@
 
     <!-- Config Dialog -->
     <el-dialog v-model="showConfigDialog" title="手动配置 MCP Server" width="500px">
-      <el-form label-width="100px">
+      <el-form ref="configFormRef" :model="configForm" :rules="configRules" label-width="100px">
         <el-form-item label="文件路径">
           <div style="display: flex; gap: 8px; width: 100%">
             <el-input v-model="configFilePath" placeholder="目录路径或 mcp-server.json 文件路径" style="flex: 1" />
@@ -125,7 +123,7 @@
           </div>
         </el-form-item>
         <div style="border-bottom: 1px solid #eee; margin-bottom: 16px" />
-        <el-form-item label="名称">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="configForm.name" placeholder="唯一标识" />
         </el-form-item>
         <el-form-item label="显示名">
@@ -134,13 +132,13 @@
         <el-form-item label="描述">
           <el-input v-model="configForm.description" type="textarea" placeholder="描述" />
         </el-form-item>
-        <el-form-item label="命令">
+        <el-form-item label="命令" prop="command">
           <el-input v-model="configForm.command" placeholder="node" />
         </el-form-item>
         <el-form-item label="参数">
           <el-input v-model="configForm.args" placeholder="index.js" />
         </el-form-item>
-        <el-form-item label="工作目录">
+        <el-form-item label="工作目录" prop="workDir">
           <el-input v-model="configForm.workDir" placeholder="绝对路径" />
         </el-form-item>
       </el-form>
@@ -251,10 +249,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, onMounted } from 'vue'
+import { ref, shallowRef, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Setting } from '@element-plus/icons-vue'
+import type { FormInstance, FormRules } from 'element-plus'
+import { Upload, Setting, ArrowDown } from '@element-plus/icons-vue'
+import { useStatusTag } from '@/composables/useStatusTag'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { mcpApi, type McpServer, type McpToolInfo, type McpTestResult } from '@/api/mcp'
+import { formatDateTime } from '@/utils/format'
 
 const servers = ref<McpServer[]>([])
 const loadingId = ref<number | null>(null)
@@ -262,6 +266,25 @@ const loadingId = ref<number | null>(null)
 const showUploadDialog = ref(false)
 const uploadForm = ref({ name: '', displayName: '', description: '' })
 const uploadFile = shallowRef<File | null>(null)
+const uploadFormRef = ref<FormInstance>()
+const configFormRef = ref<FormInstance>()
+// 合并文件字段进表单模型，统一走 :rules 校验
+const uploadFormModel = computed(() => ({ ...uploadForm.value, file: uploadFile.value }))
+const uploadRules: FormRules = {
+  name: [{ required: true, message: '请填写名称', trigger: 'blur' }],
+  file: [{
+    validator: (_rule: any, value: any, callback: any) => {
+      if (!value) callback(new Error('请选择 ZIP 文件'))
+      else callback()
+    },
+    trigger: 'change'
+  }]
+}
+const configRules: FormRules = {
+  name: [{ required: true, message: '请填写名称', trigger: 'blur' }],
+  command: [{ required: true, message: '请填写命令', trigger: 'blur' }],
+  workDir: [{ required: true, message: '请填写工作目录', trigger: 'blur' }]
+}
 const uploading = ref(false)
 
 const showConfigDialog = ref(false)
@@ -294,23 +317,19 @@ async function loadServers() {
   }
 }
 
-function statusTagType(status: string) {
-  return status === 'RUNNING' ? 'success' : status === 'ERROR' ? 'danger' : 'info'
-}
-
-function statusLabel(status: string) {
-  return status === 'RUNNING' ? '运行中' : status === 'ERROR' ? '错误' : '已停止'
-}
+// 状态徽章统一走全站映射（运行中=warning，danger 仅留给失败）
+const { statusType: tagTypeOf, statusLabel: labelOf } = useStatusTag()
+function statusTagType(status: string) { return tagTypeOf(status) }
+function statusLabel(status: string) { return labelOf(status) }
 
 function handleFileChange(file: any) {
   uploadFile.value = file.raw
+  uploadFormRef.value?.validateField('file').catch(() => {})
 }
 
 async function handleUpload() {
-  if (!uploadForm.value.name || !uploadFile.value) {
-    ElMessage.warning('请填写名称并选择文件')
-    return
-  }
+  const valid = await uploadFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   uploading.value = true
   try {
     await mcpApi.uploadServer(
@@ -333,10 +352,8 @@ async function handleUpload() {
 }
 
 async function handleCreate() {
-  if (!configForm.value.name || !configForm.value.workDir) {
-    ElMessage.warning('请填写名称和工作目录')
-    return
-  }
+  const valid = await configFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   creating.value = true
   try {
     await mcpApi.createServer({
@@ -412,16 +429,21 @@ async function handleStop(server: McpServer) {
   }
 }
 
+/** 卡片「更多」下拉命令分发 */
+function handleCardCommand(command: string, server: McpServer) {
+  if (command === 'test') handleTest(server)
+  else if (command === 'tools') showTools(server)
+  else if (command === 'delete') handleDelete(server)
+}
+
 async function handleDelete(server: McpServer) {
+  if (!await confirmDelete(`MCP Server "${server.name}"`, '确认删除')) return
   try {
-    await ElMessageBox.confirm(`确定要删除 MCP Server "${server.name}" 吗？`, '确认删除', {
-      type: 'warning'
-    })
     await mcpApi.deleteServer(server.id)
     ElMessage.success('已删除')
     await loadServers()
-  } catch (e) {
-    // cancelled or error
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -501,9 +523,8 @@ async function handleUpdate() {
   }
 }
 
-function formatTime(value?: string) {
-  if (!value) return '-'
-  return value.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : '-'
 }
 
 onMounted(loadServers)
@@ -519,17 +540,7 @@ onMounted(loadServers)
   padding: 0;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
 
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-}
 
 .server-card {
   margin-bottom: 16px;
@@ -540,7 +551,7 @@ onMounted(loadServers)
 }
 
 .server-card.status-stopped {
-  border-left: 3px solid #909399;
+  border-left: 3px solid var(--ink-text-secondary);
 }
 
 .server-card.status-error {
@@ -555,7 +566,7 @@ onMounted(loadServers)
 
 .server-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .server-info {
@@ -571,19 +582,19 @@ onMounted(loadServers)
 }
 
 .info-row .label {
-  color: #909399;
+  color: var(--ink-text-secondary);
   min-width: 70px;
 }
 
 .info-row code {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   padding: 1px 6px;
   border-radius: 3px;
   font-size: 12px;
 }
 
 .info-row .value {
-  color: #606266;
+  color: var(--ink-text-regular);
   word-break: break-all;
 }
 
@@ -591,13 +602,17 @@ onMounted(loadServers)
   display: flex;
   gap: 6px;
   flex-wrap: nowrap;
-  overflow-x: auto;
 }
 
-/* 卡片操作区按钮收紧内边距，保证 6 个按钮单行排布不换行 */
+/* 操作收敛后仅 4 项（启动/停止、修改、详情、更多），单行排布 */
 .card-actions .el-button {
   padding: 5px 8px;
   flex-shrink: 0;
+}
+
+/* 「更多」下拉中的危险项 */
+.danger-item {
+  color: var(--el-color-danger);
 }
 
 .test-tools-block {
@@ -605,7 +620,7 @@ onMounted(loadServers)
 }
 .test-tools-title {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-bottom: 8px;
 }
 .test-tools-list {

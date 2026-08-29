@@ -1,6 +1,5 @@
 <template>
-  <div class="structured-view">
-    <h2>结构化输出</h2>
+  <page-container title="结构化输出" no-card>
 
     <el-tabs v-model="activeTab">
       <!-- Tab 1: 需求分析结构化 -->
@@ -56,7 +55,7 @@
                 <span v-if="reqResult.involvedModules && reqResult.involvedModules.length">
                   <el-tag v-for="mod in reqResult.involvedModules" :key="mod" size="small" style="margin-right: 6px; margin-bottom: 4px;">{{ mod }}</el-tag>
                 </span>
-                <span v-else style="color: #909399;">无</span>
+                <span v-else style="color: var(--ink-text-secondary);">无</span>
               </el-descriptions-item>
             </el-descriptions>
 
@@ -66,7 +65,7 @@
             <ol v-if="reqResult.modificationPoints && reqResult.modificationPoints.length" style="padding-left: 20px; line-height: 2;">
               <li v-for="(point, idx) in reqResult.modificationPoints" :key="idx">{{ point }}</li>
             </ol>
-            <p v-else style="color: #909399;">无</p>
+            <p v-else style="color: var(--ink-text-secondary);">无</p>
 
             <el-divider />
 
@@ -151,7 +150,6 @@
             <el-table
               v-if="codeResult.issues && codeResult.issues.length"
               :data="codeResult.issues"
-              border
               stripe
               size="small"
               style="width: 100%;"
@@ -179,7 +177,7 @@
               </el-table-column>
               <el-table-column prop="suggestion" label="建议" />
             </el-table>
-            <p v-else style="color: #909399;">无问题</p>
+            <p v-else style="color: var(--ink-text-secondary);">无问题</p>
 
             <el-divider />
 
@@ -187,7 +185,7 @@
             <ul v-if="codeResult.improvements && codeResult.improvements.length" style="padding-left: 20px; line-height: 2;">
               <li v-for="(imp, idx) in codeResult.improvements" :key="idx">{{ imp }}</li>
             </ul>
-            <p v-else style="color: #909399;">无</p>
+            <p v-else style="color: var(--ink-text-secondary);">无</p>
 
             <el-divider />
 
@@ -203,7 +201,7 @@
                 {{ dep }}
               </el-tag>
             </span>
-            <p v-else style="color: #909399;">无</p>
+            <p v-else style="color: var(--ink-text-secondary);">无</p>
           </el-card>
         </div>
         <div v-else-if="!codeAnalyzing" style="margin-top: 20px;">
@@ -221,7 +219,7 @@
     <el-dialog v-model="schemaDialogVisible" :title="schemaDialogTitle" width="700px">
       <pre class="schema-pre">{{ schemaContent }}</pre>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
@@ -356,13 +354,13 @@ function qualityScoreColor(score: number): string {
 }
 
 .result-card {
-  border: 1px solid #e4e7ed;
-  background-color: #fafafa;
+  border: 1px solid var(--paper-border);
+  background-color: var(--el-fill-color-light);
 }
 
 .placeholder-card {
-  border: 1px dashed #dcdfe6;
-  background-color: #fafafa;
+  border: 1px dashed var(--el-border-color);
+  background-color: var(--el-fill-color-light);
 }
 
 .placeholder-content {
@@ -371,7 +369,7 @@ function qualityScoreColor(score: number): string {
   align-items: center;
   justify-content: center;
   padding: 48px 0;
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .placeholder-icon {
@@ -381,12 +379,12 @@ function qualityScoreColor(score: number): string {
 
 .placeholder-content p {
   font-size: 14px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .schema-pre {
-  background-color: #f5f7fa;
-  border: 1px solid #e4e7ed;
+  background-color: var(--el-fill-color);
+  border: 1px solid var(--paper-border);
   border-radius: 4px;
   padding: 16px;
   font-size: 13px;
@@ -395,12 +393,12 @@ function qualityScoreColor(score: number): string {
   max-height: 500px;
   white-space: pre-wrap;
   word-break: break-all;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--app-font-mono);
 }
 
 h4 {
   font-size: 14px;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .el-divider {

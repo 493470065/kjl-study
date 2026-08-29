@@ -1,12 +1,9 @@
 <template>
-  <div class="agent-config-view">
-    <div class="page-header">
-      <h2>Agent 管理</h2>
-      <div class="actions">
-        <el-button type="primary" @click="showCreateDialog = true">创建 Agent</el-button>
-        <el-button @click="handleReload">重新加载</el-button>
-      </div>
-    </div>
+  <page-container title="Agent 管理" no-card>
+    <template #actions>
+      <el-button type="primary" @click="showCreateDialog = true">创建 Agent</el-button>
+      <el-button @click="handleReload">重新加载</el-button>
+    </template>
 
     <el-row :gutter="16">
       <el-col :span="8" v-for="agent in agents" :key="agent.name">
@@ -14,8 +11,9 @@
           <template #header>
             <div class="card-header">
               <span class="agent-name">{{ agent.name }}</span>
-              <el-tag :type="agent.status === 'RUNNING' ? 'danger' : 'success'" size="small">
-                {{ agent.status }}
+              <!-- 状态徽章统一走全站映射（useStatusTag） -->
+              <el-tag :type="statusType(agent.status)" size="small">
+                {{ statusLabel(agent.status) }}
               </el-tag>
             </div>
           </template>
@@ -67,14 +65,7 @@
             <el-button size="small" type="primary" @click="openRunDialog(agent)">运行</el-button>
             <el-button size="small" @click="viewDetail(agent.name)">详情</el-button>
             <el-button size="small" type="warning" @click="openEditDialog(agent)">修改</el-button>
-            <el-popconfirm
-              title="确定删除此 Agent？"
-              @confirm="handleDelete(agent.name)"
-            >
-              <template #reference>
-                <el-button size="small" type="danger">删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-button size="small" type="danger" @click="handleDelete(agent.name)">删除</el-button>
           </div>
         </el-card>
       </el-col>
@@ -85,8 +76,8 @@
 
     <!-- 创建 Agent 对话框 -->
     <el-dialog v-model="showCreateDialog" title="创建 Agent" width="600px">
-      <el-form :model="createForm" label-width="80px">
-        <el-form-item label="名称">
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="80px">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="createForm.name" placeholder="如 emr-reviewer" />
         </el-form-item>
         <el-form-item label="描述">
@@ -110,7 +101,7 @@
               :disabled="opt.disabled"
             />
           </el-select>
-          <div class="model-field-tip">候选来自「LLM Provider」菜单；未配置 API Key 的 Provider 不可选，留空走平台全局模型</div>
+          <div class="model-field-tip">候选来自「<el-link type="primary" :underline="false" @click="router.push('/providers')">LLM 管理</el-link>」；未配置 API Key 的 Provider 不可选，留空走平台全局模型</div>
         </el-form-item>
         <el-form-item label="能力标签">
           <el-input v-model="createForm.capabilitiesStr" placeholder="逗号分隔，如 code-analysis,emr-review" />
@@ -148,7 +139,7 @@
           >
             <el-option v-for="m in mcpOptions" :key="m.value" :label="m.label" :value="m.value" />
           </el-select>
-          <div class="model-field-tip">候选来自「MCP 管理」；关联后 Agent 运行时可调用该服务的工具</div>
+          <div class="model-field-tip">候选来自「<el-link type="primary" :underline="false" @click="router.push('/mcp')">MCP 管理</el-link>」；关联后 Agent 运行时可调用该服务的工具</div>
         </el-form-item>
         <el-form-item label="系统提示词">
           <el-input
@@ -192,7 +183,7 @@
               :disabled="opt.disabled"
             />
           </el-select>
-          <div class="model-field-tip">候选来自「LLM Provider」菜单；未配置 API Key 的 Provider 不可选，留空走平台全局模型</div>
+          <div class="model-field-tip">候选来自「<el-link type="primary" :underline="false" @click="router.push('/providers')">LLM 管理</el-link>」；未配置 API Key 的 Provider 不可选，留空走平台全局模型</div>
         </el-form-item>
         <el-form-item label="能力标签">
           <el-input v-model="editForm.capabilitiesStr" placeholder="逗号分隔，如 code-analysis,emr-review" />
@@ -230,7 +221,7 @@
           >
             <el-option v-for="m in mcpOptions" :key="m.value" :label="m.label" :value="m.value" />
           </el-select>
-          <div class="model-field-tip">候选来自「MCP 管理」；关联后 Agent 运行时可调用该服务的工具</div>
+          <div class="model-field-tip">候选来自「<el-link type="primary" :underline="false" @click="router.push('/mcp')">MCP 管理</el-link>」；关联后 Agent 运行时可调用该服务的工具</div>
         </el-form-item>
         <el-form-item label="系统提示词">
           <el-input
@@ -283,7 +274,7 @@
         </el-collapse>
       </div>
     </el-dialog>
-  </div>
+  </page-container>
 
   <!-- 运行 Agent 对话对话框 -->
   <el-dialog v-model="runDialogVisible" :title="'运行 Agent: ' + (runningAgent?.name || '')" width="800px" top="3vh" destroy-on-close @close="closeRunDialog">
@@ -312,7 +303,7 @@
             </div>
           </el-option>
           <template #empty>
-            <div class="conv-empty-tip">暂无历史对话，发送消息后自动创建</div>
+            <el-empty description="暂无历史对话，发送消息后自动创建" :image-size="60" />
           </template>
         </el-select>
         <el-button size="small" @click="createNewConversation">新对话</el-button>
@@ -459,6 +450,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+import { useStatusTag } from '@/composables/useStatusTag'
+
+const { confirmDelete } = useConfirmDelete()
+const { statusType, statusLabel } = useStatusTag()
+
+const router = useRouter()
 import { WarningFilled, Loading, Delete } from '@element-plus/icons-vue'
 import { listAgentConfigs, getAgentConfig, createAgentConfig, updateAgentConfig, deleteAgentConfig, reloadAgentConfigs, AgentConfig } from '@/api/agentConfig'
 import { agentRuntimeApi, type AgentConversation, type AgentMessage } from '@/api/agentRuntime'
@@ -471,6 +471,11 @@ const { renderMarkdown } = useMarkdown()
 
 const agents = ref<AgentConfig[]>([])
 const showCreateDialog = ref(false)
+const createFormRef = ref<FormInstance>()
+// 统一表单规范：名称必填（原先无任何校验，可创建空名 Agent）
+const createRules: FormRules = {
+  name: [{ required: true, message: '请输入 Agent 名称', trigger: 'blur' }]
+}
 const showDetailDialog = ref(false)
 
 const createForm = reactive({
@@ -548,6 +553,8 @@ async function loadAgents() {
 }
 
 async function handleCreate() {
+  const valid = await createFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   try {
     await createAgentConfig({
       name: createForm.name,
@@ -607,12 +614,13 @@ async function handleUpdate() {
 }
 
 async function handleDelete(name: string) {
+  if (!await confirmDelete(`Agent "${name}"`)) return
   try {
     await deleteAgentConfig(name)
     ElMessage.success('已删除')
     await loadAgents()
-  } catch (e: any) {
-    ElMessage.error('删除失败')
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -746,15 +754,7 @@ async function handleDeleteConversation() {
 
 /** 下拉框内删除单条历史会话（不影响下拉框打开状态之外的选择逻辑） */
 async function deleteConversationInline(conv: AgentConversation) {
-  try {
-    await ElMessageBox.confirm(`确定删除会话「${conv.title}」？删除后不可恢复。`, '删除会话', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
-    })
-  } catch {
-    return // 用户取消
-  }
+  if (!await confirmDelete(`会话「${conv.title}」`, '删除会话')) return
   try {
     await agentRuntimeApi.deleteConversation(conv.conversationId)
     ElMessage.success('已删除')
@@ -925,21 +925,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 页边距统一交给 el-main（24px） */
 .agent-config-view {
-  padding: 20px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
 
-.page-header h2 {
-  margin: 0;
-  font-size: 18px;
-}
 
 .agent-card {
   margin-bottom: 16px;
@@ -953,7 +943,7 @@ onMounted(() => {
 
 .agent-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .agent-desc {
@@ -977,7 +967,7 @@ onMounted(() => {
 
 .tag-label {
   font-size: 12px;
-  color: #999;
+  color: var(--ink-text-secondary);
   min-width: 40px;
 }
 
@@ -993,7 +983,7 @@ onMounted(() => {
 .card-actions {
   display: flex;
   gap: 8px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #ede8da;
   padding-top: 12px;
 }
 
@@ -1007,7 +997,7 @@ onMounted(() => {
 }
 
 .prompt-content, .skill-content {
-  background: #f5f5f5;
+  background: var(--el-border-color-extra-light);
   padding: 12px;
   border-radius: 4px;
   font-size: 13px;
@@ -1059,7 +1049,7 @@ onMounted(() => {
 }
 .conv-option-del {
   flex-shrink: 0;
-  color: #c0c4cc;
+  color: #b8b1a0;
   font-size: 14px;
   padding: 2px;
   border-radius: 4px;
@@ -1071,12 +1061,12 @@ onMounted(() => {
 .conv-empty-tip {
   padding: 10px 16px;
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   text-align: center;
 }
 .model-field-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   line-height: 1.4;
   margin-top: 4px;
 }
@@ -1094,7 +1084,7 @@ onMounted(() => {
 }
 .skill-option-desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1105,7 +1095,7 @@ onMounted(() => {
 /* 执行过程实时信息面板 */
 .run-process-panel {
   flex-shrink: 0;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--paper-border);
   border-radius: 6px;
   background: #fafbfc;
   margin: 0 12px;
@@ -1115,12 +1105,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 6px 10px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .run-process-title {
   font-size: 12px;
   font-weight: 600;
-  color: #606266;
+  color: var(--ink-text-regular);
 }
 .run-process-list {
   max-height: 150px;
@@ -1136,15 +1126,15 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 .run-process-time {
-  color: #c0c4cc;
-  font-family: Consolas, Menlo, monospace;
+  color: #b8b1a0;
+  font-family: var(--app-font-mono);
   flex-shrink: 0;
 }
-.run-process-text { color: #606266; }
-.run-process-text b { color: #409eff; font-weight: 600; }
+.run-process-text { color: var(--ink-text-regular); }
+.run-process-text b { color: var(--el-color-primary); font-weight: 600; }
 .run-process-args {
-  color: #909399;
-  font-family: Consolas, Menlo, monospace;
+  color: var(--ink-text-secondary);
+  font-family: var(--app-font-mono);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1155,13 +1145,13 @@ onMounted(() => {
 .run-process-fail { color: #f56c6c; font-weight: 700; }
 .run-process-details summary {
   cursor: pointer;
-  color: #409eff;
+  color: var(--el-color-primary);
   font-size: 11px;
 }
 .run-process-output {
   margin: 4px 0 6px;
   padding: 6px 8px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 4px;
   font-size: 11px;
   white-space: pre-wrap;
@@ -1179,8 +1169,8 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--paper);
+  border: 1px solid var(--paper-border);
   border-radius: 8px;
 }
 
@@ -1221,12 +1211,12 @@ onMounted(() => {
 }
 
 .run-message.user .run-msg-avatar {
-  background: #6366f1;
+  background: var(--el-color-primary);
   color: #fff;
 }
 
 .run-message.assistant .run-msg-avatar {
-  background: #334155;
+  background: var(--ink-light);
   color: #fff;
 }
 
@@ -1239,16 +1229,16 @@ onMounted(() => {
 }
 
 .run-message.user .run-msg-bubble {
-  background: #6366f1;
+  background: var(--el-color-primary);
   color: #fff;
   border-bottom-right-radius: 2px;
 }
 
 .run-message.assistant .run-msg-bubble {
   background: #fff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--paper-border);
   border-bottom-left-radius: 2px;
-  color: #1e293b;
+  color: var(--ink);
 }
 
 .run-msg-time {
@@ -1280,7 +1270,7 @@ onMounted(() => {
 .run-msg-content.markdown-body :deep(h4) {
   margin: 12px 0 6px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--ink-deep);
   line-height: 1.4;
 }
 .run-msg-content.markdown-body :deep(h1) { font-size: 17px; }
@@ -1301,13 +1291,13 @@ onMounted(() => {
 }
 .run-msg-content.markdown-body :deep(strong) {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--ink-deep);
 }
 .run-msg-content.markdown-body :deep(em) {
   font-style: italic;
 }
 .run-msg-content.markdown-body :deep(a) {
-  color: #409eff;
+  color: var(--el-color-primary);
   text-decoration: none;
 }
 .run-msg-content.markdown-body :deep(a:hover) {
@@ -1316,11 +1306,11 @@ onMounted(() => {
 /* 行内代码 */
 .run-msg-content.markdown-body :deep(code) {
   background: #eef2f7;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--paper-border);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 12.5px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--app-font-mono);
   color: #c7254e;
   word-break: break-word;
 }
@@ -1354,17 +1344,17 @@ onMounted(() => {
 }
 .run-msg-content.markdown-body :deep(th),
 .run-msg-content.markdown-body :deep(td) {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--paper-border);
   padding: 5px 10px;
   text-align: left;
 }
 .run-msg-content.markdown-body :deep(th) {
-  background: #f1f5f9;
+  background: var(--paper-light);
   font-weight: 600;
 }
 /* 引用块 */
 .run-msg-content.markdown-body :deep(blockquote) {
-  border-left: 3px solid #6366f1;
+  border-left: 3px solid var(--el-color-primary);
   background: #f5f6ff;
   color: #475569;
   padding: 6px 12px;
@@ -1377,7 +1367,7 @@ onMounted(() => {
 /* 分隔线 */
 .run-msg-content.markdown-body :deep(hr) {
   border: none;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--paper-border);
   margin: 10px 0;
 }
 
@@ -1402,7 +1392,7 @@ onMounted(() => {
 }
 .run-progress-step {
   color: var(--el-text-color-secondary);
-  font-family: monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px;
 }
 
@@ -1419,7 +1409,7 @@ onMounted(() => {
 
 .run-cursor {
   animation: blink 1s step-end infinite;
-  color: #6366f1;
+  color: var(--el-color-primary);
 }
 
 @keyframes blink {
@@ -1452,7 +1442,7 @@ onMounted(() => {
 /* 工具调用卡片 */
 .tool-calls-section {
   margin-top: 8px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--paper-border);
   padding-top: 8px;
 }
 
@@ -1465,8 +1455,8 @@ onMounted(() => {
 
 .tool-name {
   font-weight: 600;
-  color: #6366f1;
-  font-family: monospace;
+  color: var(--el-color-primary);
+  font-family: var(--app-font-mono);
 }
 
 .tool-status-tag {
@@ -1489,8 +1479,8 @@ onMounted(() => {
 }
 
 .tool-code-block {
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: var(--paper-light);
+  border: 1px solid var(--paper-border);
   border-radius: 4px;
   padding: 8px 12px;
   font-size: 12px;

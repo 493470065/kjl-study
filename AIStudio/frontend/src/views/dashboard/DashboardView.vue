@@ -98,24 +98,24 @@
       </div>
 
       <!-- 明细弹窗 -->
-      <el-dialog v-model="detailVisible" :title="detailTitle" width="1080px" :fullscreen="detailFullscreen">
+      <el-dialog v-model="detailVisible" :title="detailTitle" width="80%" :fullscreen="detailFullscreen">
         <template #header="{ close, titleId, titleClass }">
           <div class="dialog-header-with-actions">
             <span :id="titleId" :class="titleClass">{{ detailTitle }}</span>
             <div class="dialog-header-actions">
-              <el-button link @click="detailFullscreen = !detailFullscreen">
+              <el-button link :aria-label="detailFullscreen ? '退出全屏' : '全屏'" @click="detailFullscreen = !detailFullscreen">
                 <el-icon>
                   <component :is="detailFullscreen ? ScaleToOriginal : FullScreen" />
                 </el-icon>
               </el-button>
-              <el-button link @click="close">
+              <el-button link aria-label="关闭" @click="close">
                 <el-icon><Close /></el-icon>
               </el-button>
             </div>
           </div>
         </template>
         <div v-if="detailTitle.includes('支持单')" style="margin-bottom: 12px;">
-          <span style="color: #606266; font-size: 14px;">按解决人统计：</span>
+          <span style="color: var(--ink-text-regular); font-size: 14px;">按解决人统计：</span>
           <template v-if="supportResolvedByStats.length > 0">
             <el-tag
               v-for="stat in supportResolvedByStats"
@@ -127,12 +127,12 @@
               {{ stat.name }} {{ stat.count }}
             </el-tag>
           </template>
-          <span v-else style="color: #909399;">-</span>
+          <span v-else style="color: var(--ink-text-secondary);">-</span>
         </div>
         <el-table :data="detailItems" stripe :max-height="detailFullscreen ? 'calc(100vh - 180px)' : 500" v-loading="detailLoading">
           <el-table-column prop="id" label="ID" width="80">
             <template #default="{ row }">
-              <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: #409EFF; text-decoration: none;">{{ row.id }}</a>
+              <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: var(--el-color-primary); text-decoration: none;">{{ row.id }}</a>
             </template>
           </el-table-column>
           <el-table-column prop="title" label="标题" min-width="250">
@@ -163,17 +163,17 @@
       </el-dialog>
 
       <!-- 周工作量人员明细弹窗 -->
-      <el-dialog v-model="weeklyDetailVisible" :title="weeklyDetailTitle" width="1020px" :fullscreen="weeklyDetailFullscreen">
+      <el-dialog v-model="weeklyDetailVisible" :title="weeklyDetailTitle" width="80%" :fullscreen="weeklyDetailFullscreen">
         <template #header="{ close, titleId, titleClass }">
           <div class="dialog-header-with-actions">
             <span :id="titleId" :class="titleClass">{{ weeklyDetailTitle }}</span>
             <div class="dialog-header-actions">
-              <el-button link @click="weeklyDetailFullscreen = !weeklyDetailFullscreen">
+              <el-button link :aria-label="weeklyDetailFullscreen ? '退出全屏' : '全屏'" @click="weeklyDetailFullscreen = !weeklyDetailFullscreen">
                 <el-icon>
                   <component :is="weeklyDetailFullscreen ? ScaleToOriginal : FullScreen" />
                 </el-icon>
               </el-button>
-              <el-button link @click="close">
+              <el-button link aria-label="关闭" @click="close">
                 <el-icon><Close /></el-icon>
               </el-button>
             </div>
@@ -182,7 +182,7 @@
         <el-table :data="weeklyDetailItems" stripe :max-height="weeklyDetailFullscreen ? 'calc(100vh - 180px)' : 500">
           <el-table-column prop="id" label="ID" width="80">
             <template #default="{ row }">
-              <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: #409EFF; text-decoration: none;">{{ row.id }}</a>
+              <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: var(--el-color-primary); text-decoration: none;">{{ row.id }}</a>
             </template>
           </el-table-column>
           <el-table-column prop="title" label="标题" min-width="300" />
@@ -196,28 +196,28 @@
       </el-dialog>
 
       <!-- 异常明细弹窗 -->
-      <el-dialog v-model="exceptionDetailVisible" :title="exceptionDetailTitle" width="1080px" :fullscreen="exceptionDetailFullscreen">
+      <el-dialog v-model="exceptionDetailVisible" :title="exceptionDetailTitle" width="80%" :fullscreen="exceptionDetailFullscreen">
         <template #header="{ close, titleId, titleClass }">
           <div class="dialog-header-with-actions">
             <span :id="titleId" :class="titleClass">{{ exceptionDetailTitle }}</span>
             <div class="dialog-header-actions">
-              <el-button link @click="exceptionDetailFullscreen = !exceptionDetailFullscreen">
+              <el-button link :aria-label="exceptionDetailFullscreen ? '退出全屏' : '全屏'" @click="exceptionDetailFullscreen = !exceptionDetailFullscreen">
                 <el-icon>
                   <component :is="exceptionDetailFullscreen ? ScaleToOriginal : FullScreen" />
                 </el-icon>
               </el-button>
-              <el-button link @click="close">
+              <el-button link aria-label="关闭" @click="close">
                 <el-icon><Close /></el-icon>
               </el-button>
             </div>
           </div>
         </template>
-        <div style="margin-bottom: 8px; color: #909399">共 {{ exceptionDetailItems.length }} 条</div>
+        <div style="margin-bottom: 8px; color: var(--ink-text-secondary)">共 {{ exceptionDetailItems.length }} 条</div>
         <el-table :data="exceptionDetailItems" stripe :max-height="exceptionDetailFullscreen ? 'calc(100vh - 200px)' : 450" v-loading="exceptionDetailLoading" @selection-change="onExceptionSelectionChange">
           <el-table-column type="selection" width="45" v-if="currentExceptionFixable" />
           <el-table-column prop="id" label="ID" width="80">
             <template #default="{ row }">
-              <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: #409EFF; text-decoration: none;">{{ row.id }}</a>
+              <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: var(--el-color-primary); text-decoration: none;">{{ row.id }}</a>
             </template>
           </el-table-column>
           <el-table-column prop="title" label="标题" min-width="250" />
@@ -247,49 +247,42 @@
       </el-dialog>
     </div>
 
-    <!-- Agent OS 概览 -->
+    <!-- 工作站概览 · 健康检查 -->
     <div class="overview-section">
-      <h2>Agent OS 概览</h2>
-      <el-row :gutter="20">
-        <el-col :span="6">
-          <el-card>
-            <template #header>活跃 Agent</template>
-            <div class="stat-number">{{ agentCount }}</div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card>
-            <template #header>今日任务</template>
-            <div class="stat-number">{{ taskCount }}</div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card>
-            <template #header>知识条目</template>
-            <div class="stat-number">{{ knowledgeCount }}</div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card>
-            <template #header>Token 使用</template>
-            <div class="stat-number">{{ tokenUsage }}</div>
+      <div class="section-header">
+        <h2>工作站概览</h2>
+      </div>
+      <el-row :gutter="16" v-loading="healthLoading">
+        <el-col :xs="24" :sm="12" :md="6" v-for="card in healthCards" :key="card.title">
+          <el-card shadow="hover" :class="['health-card', card.ok ? 'health-ok' : 'health-warn']">
+            <div class="health-card__top">
+              <span class="health-card__title">{{ card.title }}</span>
+              <el-tag size="small" :type="card.ok ? 'success' : 'warning'">
+                {{ card.ok ? '就绪' : '待配置' }}
+              </el-tag>
+            </div>
+            <div class="health-card__desc">{{ card.desc }}</div>
+            <el-button size="small" :type="card.ok ? 'default' : 'primary'" @click="router.push(card.link)">
+              {{ card.action }}
+            </el-button>
           </el-card>
         </el-col>
       </el-row>
 
       <el-card class="agent-list">
         <template #header>Agent 列表</template>
-        <el-table :data="agents" style="width: 100%">
-          <el-table-column prop="id" label="ID" />
-          <el-table-column prop="name" label="名称" />
-          <el-table-column prop="status" label="状态">
+        <el-table :data="agents" style="width: 100%" v-loading="agentsLoading">
+          <el-table-column prop="id" label="ID" width="80" />
+          <el-table-column prop="name" label="名称" min-width="140" />
+          <el-table-column prop="status" label="状态" width="120">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'IDLE' ? 'success' : 'warning'">
-                {{ row.status }}
+              <!-- 状态徽章统一走全站映射（useStatusTag） -->
+              <el-tag :type="statusType(row.status)">
+                {{ statusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="description" label="描述" />
+          <el-table-column prop="description" label="描述" min-width="200" />
         </el-table>
       </el-card>
     </div>
@@ -307,6 +300,11 @@ import {
 } from '@/api/tfsStats'
 import { getConfigMap } from '@/api/systemConfig'
 import { agentApi } from '@/api/agent'
+import http from '@/api/http'
+import { useRouter } from 'vue-router'
+import { useStatusTag } from '@/composables/useStatusTag'
+
+const { statusType, statusLabel } = useStatusTag()
 
 // TFS 数据
 const tfsLoading = ref(false)
@@ -321,14 +319,14 @@ const weekly = ref<WeeklyData>({ total: 0, byPerson: {} })
 const daily = ref<DailyData>({ stats: {}, total: 0 })
 
 const stockItems = [
-  { key: '统计库存需求', label: '统计库存需求', color: '#409EFF' },
-  { key: '统计库存需求（全）', label: '统计库存需求（全）', color: '#409EFF' },
+  { key: '统计库存需求', label: '统计库存需求', color: 'var(--el-color-primary)' },
+  { key: '统计库存需求（全）', label: '统计库存需求（全）', color: 'var(--el-color-primary)' },
   { key: '库存软质', label: '库存软质', color: '#E6A23C' },
   { key: '库存软质（全）', label: '库存软质（全）', color: '#E6A23C' },
   { key: '库存软质（高）', label: '库存软质（高）', color: '#F56C6C' },
   { key: '库存Bug', label: '库存Bug', color: '#F56C6C' },
   { key: '库存软质（单需求）', label: '库存软质（单需求）', color: '#E6A23C' },
-  { key: '未排期需求', label: '未排期需求', color: '#909399' }
+  { key: '未排期需求', label: '未排期需求', color: 'var(--ink-text-secondary)' }
 ]
 
 const dailyItems = [
@@ -563,29 +561,126 @@ function exportToExcel(data: any[], filename: string) {
   URL.revokeObjectURL(a.href)
 }
 
-// Agent OS 数据
-const agentCount = ref(0)
-const taskCount = ref(0)
-const knowledgeCount = ref(0)
-const tokenUsage = ref(0)
+// ===== 健康检查（真实数据，替代原先恒为 0 的假卡片）=====
+const router = useRouter()
 const agents = ref<any[]>([])
+const agentsLoading = ref(false)
+const healthLoading = ref(true)
+const providerTotal = ref(0)
+const providerReady = ref(false)
+const mcpTotal = ref(0)
+const mcpRunning = ref(0)
+
+const healthCards = computed(() => [
+  {
+    title: 'LLM 服务',
+    ok: providerReady.value,
+    desc: providerReady.value
+      ? `已配置 ${providerTotal.value} 个 Provider，对话可用`
+      : '尚未配置可用的 LLM，AI 对话将不可用',
+    action: '去配置',
+    link: '/providers'
+  },
+  {
+    title: 'MCP 服务',
+    ok: mcpRunning.value > 0,
+    desc: mcpTotal.value === 0
+      ? '尚未接入 MCP 服务，Agent 将缺少外部工具能力'
+      : `${mcpRunning.value}/${mcpTotal.value} 个服务运行中`,
+    action: mcpTotal.value === 0 ? '去接入' : '管理',
+    link: '/mcp'
+  },
+  {
+    title: 'Agent',
+    ok: agents.value.length > 0,
+    desc: agents.value.length > 0
+      ? `已配置 ${agents.value.length} 个 Agent，可在对话中选用`
+      : '尚未创建 Agent，可从零搭建专属助手',
+    action: agents.value.length > 0 ? '管理' : '去创建',
+    link: '/agents'
+  },
+  {
+    title: 'AI 对话',
+    ok: providerReady.value,
+    desc: '基于已配置的模型与能力开始提问',
+    action: '开始对话',
+    link: '/chat'
+  }
+])
+
+async function loadHealth() {
+  healthLoading.value = true
+  // silent: 健康检查失败只降级展示，不打扰用户
+  const [providersRes, mcpRes] = await Promise.allSettled([
+    http.get('/llm/providers', { silent: true } as any),
+    http.get('/mcp/servers', { silent: true } as any)
+  ])
+  if (providersRes.status === 'fulfilled') {
+    const list = providersRes.value.data || []
+    providerTotal.value = list.length
+    providerReady.value = list.some((p: any) => p.hasApiKey && p.enabled !== false)
+  }
+  if (mcpRes.status === 'fulfilled') {
+    const list = mcpRes.value.data || []
+    mcpTotal.value = list.length
+    mcpRunning.value = list.filter((s: any) => s.status === 'RUNNING').length
+  }
+  healthLoading.value = false
+}
 
 onMounted(async () => {
   loadTfsData()
   loadTfsServerUrl()
+  loadHealth()
+  agentsLoading.value = true
   try {
     const res = await agentApi.listAgents()
     agents.value = res
-    agentCount.value = res.length
-  } catch (e) {
-    console.error(e)
+  } catch {
+    agents.value = []
+  } finally {
+    agentsLoading.value = false
   }
 })
 </script>
 
 <style scoped>
+/* 页边距统一交给 el-main（24px） */
 .dashboard {
-  padding: 20px;
+}
+
+/* 健康检查卡 */
+.health-card {
+  margin-bottom: 16px;
+  border-radius: 8px;
+}
+
+.health-card.health-warn {
+  border-left: 3px solid var(--el-color-warning, #e6a23c);
+}
+
+.health-card.health-ok {
+  border-left: 3px solid var(--el-color-success, #67c23a);
+}
+
+.health-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.health-card__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink-text);
+}
+
+.health-card__desc {
+  font-size: 13px;
+  color: var(--ink-text-secondary);
+  margin: 8px 0 12px;
+  min-height: 38px;
+  line-height: 1.5;
 }
 
 .tfs-stats-section {
@@ -602,13 +697,13 @@ onMounted(async () => {
 .section-header h2 {
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .overview-section h2 {
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
   margin-bottom: 16px;
 }
 
@@ -619,10 +714,10 @@ onMounted(async () => {
 .section h3 {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
   margin-bottom: 12px;
   padding-left: 8px;
-  border-left: 3px solid #409EFF;
+  border-left: 3px solid var(--el-color-primary);
 }
 
 .stat-card {
@@ -634,13 +729,13 @@ onMounted(async () => {
 .stat-card .stat-value {
   font-size: 28px;
   font-weight: 700;
-  color: #303133;
+  color: var(--ink-text);
   margin-bottom: 4px;
 }
 
 .stat-card .stat-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-bottom: 6px;
 }
 
@@ -649,7 +744,7 @@ onMounted(async () => {
 }
 
 .stat-card-total .stat-value {
-  color: #409EFF;
+  color: var(--el-color-primary);
 }
 
 .stat-card-danger .stat-value {
@@ -673,7 +768,7 @@ onMounted(async () => {
   font-size: 32px;
   font-weight: bold;
   text-align: center;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .agent-list {

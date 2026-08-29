@@ -1,9 +1,8 @@
 <template>
-  <div class="providers-view">
-    <div class="page-header">
-      <h2>LLM Provider 管理</h2>
+  <page-container title="LLM 管理" no-card>
+    <template #actions>
       <el-button type="primary" @click="showCreate">新增 Provider</el-button>
-    </div>
+    </template>
 
     <el-row :gutter="16">
       <el-col :span="8" v-for="p in providers" :key="p.id">
@@ -30,7 +29,7 @@
           </div>
           <div class="provider-users">
             <div class="label">用户：</div>
-            <div v-if="!p.users || p.users.length === 0" class="no-users">暂无用户使用</div>
+            <el-empty v-if="!p.users || p.users.length === 0" description="暂无用户使用" :image-size="40" />
             <div v-else class="user-list">
               <el-tag v-for="u in p.users" :key="u.username" size="small" :type="u.enabled ? '' : 'info'" class="user-tag">
                 {{ u.displayName }}
@@ -47,12 +46,12 @@
       </el-col>
     </el-row>
 
-    <div v-if="!providers.length" class="empty-text">暂无 Provider 配置</div>
+    <el-empty v-if="!providers.length" description="暂无 Provider 配置" />
 
     <!-- 新增/编辑对话框 -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑 Provider' : '新增 Provider'" width="500px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="名称" required>
+      <el-form ref="formRef" :model="form" :rules="providerRules" label-width="100px">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" :disabled="isEdit" placeholder="唯一标识" />
         </el-form-item>
         <el-form-item label="显示名称">
@@ -64,10 +63,10 @@
             <el-option label="Ollama" value="OLLAMA" />
           </el-select>
         </el-form-item>
-        <el-form-item label="API 地址" required>
+        <el-form-item label="API 地址" prop="baseUrl">
           <el-input v-model="form.baseUrl" placeholder="https://api.example.com/v1" />
         </el-form-item>
-        <el-form-item label="模型名称" required>
+        <el-form-item label="模型名称" prop="modelName">
           <el-input v-model="form.modelName" placeholder="glm-5 / gpt-4 / llama3" />
         </el-form-item>
         <el-form-item label="API Key">
@@ -86,12 +85,16 @@
         <el-button type="primary" :loading="saving" @click="handleSave">确定</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { llmProviderApi, type LlmProvider } from '@/api/llmProvider'
 
 const providers = ref<LlmProvider[]>([])
@@ -124,11 +127,18 @@ function showEdit(p: LlmProvider) {
   dialogVisible.value = true
 }
 
+const formRef = ref<FormInstance>()
+
+// 统一表单规范：:rules + validate()，错误落在字段上，不再用提交时 ElMessage 兜底
+const providerRules: FormRules = {
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  baseUrl: [{ required: true, message: '请输入 API 地址', trigger: 'blur' }],
+  modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }]
+}
+
 async function handleSave() {
-  if (!form.name.trim() || !form.baseUrl.trim() || !form.modelName.trim()) {
-    ElMessage.warning('请填写必填项')
-    return
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     if (isEdit.value && editingId.value) {
@@ -152,12 +162,14 @@ async function activate(p: LlmProvider) {
 }
 
 async function handleDelete(p: LlmProvider) {
+  if (!await confirmDelete(`Provider "${p.displayName}"`)) return
   try {
-    await ElMessageBox.confirm(`确定删除 Provider "${p.displayName}"？`, '确认')
     await llmProviderApi.deleteProvider(p.id)
     ElMessage.success('已删除')
     await loadProviders()
-  } catch {}
+  } catch {
+    // 接口错误已由统一错误出口提示
+  }
 }
 
 onMounted(loadProviders)
@@ -165,22 +177,20 @@ onMounted(loadProviders)
 
 <style scoped>
 .providers-view { padding: 0; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-header h2 { font-size: 18px; font-weight: 600; color: #303133; }
 .el-card { margin-bottom: 16px; }
 .default-card { border-color: #67c23a; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
-.provider-info { font-size: 13px; line-height: 2; color: #606266; }
-.provider-info .label { color: #909399; }
-.provider-users { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e4e7ed; font-size: 13px; }
-.provider-users .label { color: #909399; margin-bottom: 6px; }
-.no-users { color: #c0c4cc; font-size: 12px; }
+.provider-info { font-size: 13px; line-height: 2; color: var(--ink-text-regular); }
+.provider-info .label { color: var(--ink-text-secondary); }
+.provider-users { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--paper-border); font-size: 13px; }
+.provider-users .label { color: var(--ink-text-secondary); margin-bottom: 6px; }
+.no-users { color: #b8b1a0; font-size: 12px; }
 .user-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .user-tag { cursor: default; }
-.user-model { color: #909399; font-size: 11px; }
+.user-model { color: var(--ink-text-secondary); font-size: 11px; }
 .card-actions { margin-top: 12px; display: flex; gap: 8px; }
-.api-key-masked { font-family: Consolas, Menlo, monospace; font-size: 12px; color: #606266; }
+.api-key-masked { font-family: var(--app-font-mono); font-size: 12px; color: var(--ink-text-regular); }
 .api-key-tag { margin-left: 6px; }
-.form-tip { font-size: 12px; color: #909399; line-height: 1.4; margin-top: 4px; }
-.empty-text { text-align: center; color: #909399; padding: 40px; }
+.form-tip { font-size: 12px; color: var(--ink-text-secondary); line-height: 1.4; margin-top: 4px; }
+.empty-text { text-align: center; color: var(--ink-text-secondary); padding: 40px; }
 </style>

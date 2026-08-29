@@ -214,7 +214,7 @@ onMounted(async () => {
 <style scoped>
 .config-card {
   margin-bottom: 20px;
-  border: 1px solid #f1f5f9;
+  border: 1px solid var(--paper-light);
 }
 
 .config-card:last-child {
@@ -223,6 +223,6 @@ onMounted(async () => {
 
 .card-header {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
 }
 </style>

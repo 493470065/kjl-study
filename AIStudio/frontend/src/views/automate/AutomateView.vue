@@ -1,12 +1,9 @@
 <template>
-  <div class="automate-view">
-    <div class="page-header">
-      <h2>自动化管理</h2>
-      <div class="page-header__actions">
-        <el-button @click="adminDialogVisible = true">任务类型管理</el-button>
-        <el-button type="primary" @click="showStartDialog = true">自定义启动</el-button>
-      </div>
-    </div>
+  <page-container title="自动化管理" no-card>
+    <template #actions>
+<el-button @click="adminDialogVisible = true">任务类型管理</el-button>
+      <el-button type="primary" @click="showStartDialog = true">自定义启动</el-button>
+    </template>
 
     <!-- 任务类型卡片（统一入口） -->
     <TaskTypeCards :task-types="taskTypes" @launch="handleLaunchType" @manage="adminDialogVisible = true" />
@@ -23,7 +20,7 @@
     <el-table :data="filteredAutomates" stripe v-loading="loading">
       <el-table-column prop="tfsWorkItemId" label="TFS #" width="90">
         <template #default="{ row }">
-          <a :href="getWorkItemUrl(row.tfsWorkItemId)" target="_blank" class="tfs-link" style="color: #409EFF; text-decoration: none;">{{ row.tfsWorkItemId }}</a>
+          <a :href="getWorkItemUrl(row.tfsWorkItemId)" target="_blank" class="tfs-link" style="color: var(--el-color-primary); text-decoration: none;">{{ row.tfsWorkItemId }}</a>
         </template>
       </el-table-column>
       <el-table-column label="类型" width="110">
@@ -56,17 +53,29 @@
           {{ formatDate(row.createdAt) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="320">
+      <!-- 操作收敛（规范 §3.1）：状态动作+详情明面保留，查看类/删除收进「更多」 -->
+      <el-table-column label="操作" width="230" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link size="small" @click="showDetail(row)">详情</el-button>
           <el-button v-if="row.status === 'WAITING_CONFIRM'" type="warning" link size="small" @click="openConfirm(row)">确认</el-button>
           <el-button v-if="row.status === 'PAUSED_ON_FAILURE'" type="warning" link size="small" @click="openContinueDialog(row)">补充输入并继续</el-button>
           <el-button v-if="row.status === 'FAILED'" type="warning" link size="small" @click="handleRetry(row)">重试</el-button>
-          <el-button type="info" link size="small" @click="openSteps(row)">步骤</el-button>
-          <el-button type="info" link size="small" @click="openChanges(row)">变更</el-button>
-          <el-button type="info" link size="small" @click="openArtifacts(row)">过程文件</el-button>
-          <el-button type="info" link size="small" @click="openLogs(row)">日志</el-button>
-          <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+          <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
+            <el-button link size="small">
+              更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="steps">步骤</el-dropdown-item>
+                <el-dropdown-item command="changes">变更</el-dropdown-item>
+                <el-dropdown-item command="artifacts">过程文件</el-dropdown-item>
+                <el-dropdown-item command="logs">日志</el-dropdown-item>
+                <el-dropdown-item command="delete" divided>
+                  <span style="color: var(--el-color-danger)">删除</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -75,11 +84,11 @@
 
     <!-- Start Dialog -->
     <el-dialog v-model="showStartDialog" title="启动自动化任务" width="460px" @open="loadStartFormData">
-      <el-form label-width="100px">
-        <el-form-item label="TFS 需求号">
+      <el-form ref="startFormRef" :model="startForm" :rules="startRules" label-width="100px">
+        <el-form-item label="TFS 需求号" prop="workItemId">
           <el-input-number v-model="startForm.workItemId" :min="1" placeholder="请输入需求号" style="width: 100%" controls-position="right" />
         </el-form-item>
-        <el-form-item label="选择工作流">
+        <el-form-item label="选择工作流" prop="workflowId">
           <el-select v-model="startForm.workflowId" placeholder="选择工作流" clearable filterable style="width: 100%">
             <el-option v-for="wf in workflows" :key="wf.id" :label="wf.name" :value="wf.id" />
           </el-select>
@@ -92,7 +101,7 @@
     </el-dialog>
 
     <!-- Detail Dialog -->
-    <el-dialog v-model="showDetailDialog" title="自动化任务详情" width="1000px">
+    <el-dialog v-model="showDetailDialog" title="自动化任务详情" width="80%">
       <div v-if="selectedAutomate">
         <el-tabs v-model="detailActiveTab" @tab-change="handleDetailTabChange">
           <!-- Tab 1: Basic Info -->
@@ -461,7 +470,7 @@
     </el-dialog>
 
     <!-- Changes Dialog -->
-    <el-dialog v-model="showChangesDialog" title="文件变更" width="1000px">
+    <el-dialog v-model="showChangesDialog" title="文件变更" width="80%">
       <div class="changes-toolbar">
         <el-button size="small" @click="refreshChanges" :loading="changesLoading">刷新</el-button>
         <span v-if="changesAutomate" class="changes-automate-info">
@@ -579,12 +588,18 @@
 
     <!-- 任务类型管理弹窗 -->
     <TaskTypeAdminDialog v-model="adminDialogVisible" @changed="loadTaskTypes" />
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const route = useRoute()
+const { confirmDelete } = useConfirmDelete()
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowRight, ArrowDown, ArrowUp, Loading } from '@element-plus/icons-vue'
 import http from '@/api/http'
 import { getConfigMap } from '@/api/systemConfig'
@@ -601,6 +616,7 @@ import {
 import TaskTypeCards from './components/TaskTypeCards.vue'
 import TaskLaunchDialog from './components/TaskLaunchDialog.vue'
 import TaskTypeAdminDialog from './components/TaskTypeAdminDialog.vue'
+import { formatDateTime } from '@/utils/format'
 
 // ======================== 任务类型（统一入口） ========================
 const taskTypes = ref<AutomateTaskType[]>([])
@@ -668,6 +684,11 @@ const startForm = reactive({
   workItemId: null as number | null,
   workflowId: null as number | null,
 })
+const startFormRef = ref<FormInstance>()
+const startRules: FormRules = {
+  workItemId: [{ required: true, message: '请填写需求号', trigger: 'change' }],
+  workflowId: [{ required: true, message: '请选择工作流', trigger: 'change' }]
+}
 const workflows = ref<any[]>([])
 const starting = ref(false)
 
@@ -724,9 +745,8 @@ function automateStatusLabel(status: string) {
   return map[status] || status
 }
 
-function formatDate(dateStr?: string) {
-  if (!dateStr) return '-'
-  try { return new Date(dateStr).toLocaleString('zh-CN') } catch { return dateStr }
+function formatDate(dateStr?: string): string {
+  return dateStr ? formatDateTime(dateStr) : '-'
 }
 
 // ======================== Detail Dialog ========================
@@ -1227,24 +1247,24 @@ let stepsTimer: ReturnType<typeof setInterval> | null = null
 
 function stepColor(type: string): string {
   const map: Record<string, string> = {
-    SKILL_LOAD: '#409eff',
-    SKILL_START: '#409eff',
+    SKILL_LOAD: 'var(--el-color-primary)',
+    SKILL_START: 'var(--el-color-primary)',
     SKILL_END: '#67c23a',
-    CONTEXT_BUILD: '#409eff',
-    CLAUDE_MD_LOAD: '#2196f3',
-    CLAUDE_MD_SKIP: '#ff9800',
+    CONTEXT_BUILD: 'var(--el-color-primary)',
+    CLAUDE_MD_LOAD: 'var(--viz-blue)',
+    CLAUDE_MD_SKIP: 'var(--viz-orange)',
     LLM_CALL: '#67c23a',
-    TOOL_CALL: '#a855f7',
+    TOOL_CALL: 'var(--viz-purple)',
     AGENT_RESPONSE: '#e6a23c',
     CONFIRM_REQUEST: '#e6a23c',
-    STAGE_START: '#00bcd4',
-    STAGE_COMPLETE: '#00bcd4',
-    PIPELINE_START: '#409eff',
+    STAGE_START: 'var(--viz-cyan)',
+    STAGE_COMPLETE: 'var(--viz-cyan)',
+    PIPELINE_START: 'var(--el-color-primary)',
     PIPELINE_COMPLETE: '#67c23a',
-    INFO: '#909399',
+    INFO: 'var(--ink-text-secondary)',
     ERROR: '#f56c6c'
   }
-  return map[type] || '#909399'
+  return map[type] || 'var(--ink-text-secondary)'
 }
 
 function stepTypeTag(type: string): string {
@@ -1585,10 +1605,8 @@ async function loadAutomatesData() {
 }
 
 async function handleStart() {
-  if (!startForm.workItemId || !startForm.workflowId) {
-    ElMessage.warning('请填写需求号并选择工作流')
-    return
-  }
+  const valid = await startFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   starting.value = true
   try {
     await automateApi.start(startForm.workItemId, undefined, undefined, undefined, undefined, startForm.workflowId)
@@ -1614,20 +1632,23 @@ async function handleRetry(automate: AutomateTask) {
   }
 }
 
+/** 行操作「更多」下拉命令分发 */
+function handleRowCommand(command: string, row: AutomateTask) {
+  if (command === 'steps') openSteps(row)
+  else if (command === 'changes') openChanges(row)
+  else if (command === 'artifacts') openArtifacts(row)
+  else if (command === 'logs') openLogs(row)
+  else if (command === 'delete') handleDelete(row)
+}
+
 async function handleDelete(automate: AutomateTask) {
+  if (!await confirmDelete(`自动化任务「${automate.tfsTitle}」(#${automate.tfsWorkItemId})`, '删除确认')) return
   try {
-    await ElMessageBox.confirm(
-      `确认删除自动化任务「${automate.tfsTitle}」(#${automate.tfsWorkItemId})？删除后不可恢复。`,
-      '删除确认',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
     await automateApi.delete(automate.id)
     ElMessage.success('删除成功')
     await loadAutomates()
-  } catch (e: any) {
-    if (e !== 'cancel' && e?.toString() !== 'cancel') {
-      ElMessage.error('删除失败')
-    }
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -1666,6 +1687,13 @@ onMounted(() => {
   loadTaskTypes()
   loadTfsServerUrl()
   startTableAutoRefresh()
+
+  // 深链支持：/automate?workItemId=12345（从需求看板一键跳入时预填需求号）
+  const qid = Number(route.query.workItemId)
+  if (qid && !isNaN(qid)) {
+    startForm.workItemId = qid
+    showStartDialog.value = true
+  }
 })
 
 onUnmounted(() => {
@@ -1681,10 +1709,6 @@ onUnmounted(() => {
   padding: 0;
 }
 
-.page-header__actions {
-  display: flex;
-  gap: 8px;
-}
 
 .list-toolbar {
   display: flex;
@@ -1694,29 +1718,19 @@ onUnmounted(() => {
 }
 
 .list-toolbar__title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ink);
 }
 
 .params-json {
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px;
-  color: #606266;
+  color: var(--ink-text-regular);
   word-break: break-all;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
 
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-}
 
 .automate-detail {
   padding: 0 8px;
@@ -1728,13 +1742,13 @@ onUnmounted(() => {
   gap: 12px;
   margin-bottom: 12px;
   padding: 8px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 4px;
 }
 
 .detail-tab-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .stages {
@@ -1756,7 +1770,7 @@ onUnmounted(() => {
 }
 
 .stage-output pre {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   padding: 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -1803,12 +1817,12 @@ onUnmounted(() => {
 .changes-automate-info,
 .artifacts-automate-info {
   font-size: 14px;
-  color: #606266;
+  color: var(--ink-text-regular);
 }
 
 .changes-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .step-item {
@@ -1851,7 +1865,7 @@ onUnmounted(() => {
 }
 
 .step-metadata .metadata-content {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   padding: 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -1885,7 +1899,7 @@ onUnmounted(() => {
   word-break: break-all;
   max-height: 300px;
   overflow-y: auto;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
 }
 
 .confirm-message-scroll {
@@ -1926,7 +1940,7 @@ onUnmounted(() => {
 }
 
 .change-item {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   margin-bottom: 8px;
 }
@@ -1937,12 +1951,12 @@ onUnmounted(() => {
   align-items: center;
   padding: 12px 16px;
   cursor: pointer;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
   transition: background 0.2s;
 }
 
 .change-header:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .change-info {
@@ -1952,9 +1966,9 @@ onUnmounted(() => {
 }
 
 .change-filepath {
-  font-family: Consolas, Monaco, monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .change-meta {
@@ -1962,7 +1976,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .change-meta .el-icon {
@@ -1975,13 +1989,13 @@ onUnmounted(() => {
 
 .change-diff {
   padding: 16px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .change-summary {
   margin-bottom: 12px;
   font-size: 13px;
-  color: #606266;
+  color: var(--ink-text-regular);
 }
 
 .diff-container {
@@ -1998,7 +2012,7 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 4px;
-  color: #606266;
+  color: var(--ink-text-regular);
 }
 
 .diff-old {
@@ -2029,7 +2043,7 @@ onUnmounted(() => {
 
 .diff-new-file .diff-label,
 .diff-deleted-file .diff-label {
-  color: #909399;
+  color: var(--ink-text-secondary);
   font-style: italic;
 }
 
@@ -2040,7 +2054,7 @@ onUnmounted(() => {
 }
 
 .artifact-item {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   margin-bottom: 8px;
 }
@@ -2051,12 +2065,12 @@ onUnmounted(() => {
   align-items: center;
   padding: 12px 16px;
   cursor: pointer;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
   transition: background 0.2s;
 }
 
 .artifact-header:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .artifact-info {
@@ -2066,9 +2080,9 @@ onUnmounted(() => {
 }
 
 .artifact-filepath {
-  font-family: Consolas, Monaco, monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .artifact-meta {
@@ -2076,7 +2090,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .artifact-meta .el-icon {
@@ -2089,13 +2103,13 @@ onUnmounted(() => {
 
 .artifact-content {
   padding: 16px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .artifact-summary {
   margin-bottom: 12px;
   font-size: 13px;
-  color: #606266;
+  color: var(--ink-text-regular);
 }
 
 .artifact-code pre {
@@ -2111,7 +2125,7 @@ onUnmounted(() => {
 }
 
 .artifact-no-content {
-  color: #909399;
+  color: var(--ink-text-secondary);
   font-size: 13px;
   text-align: center;
   padding: 16px;
@@ -2127,18 +2141,18 @@ onUnmounted(() => {
 
 .logs-automate-info {
   font-size: 14px;
-  color: #606266;
+  color: var(--ink-text-regular);
 }
 
 .logs-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .logs-list {
   max-height: 600px;
   overflow-y: auto;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
 }
 
@@ -2148,8 +2162,8 @@ onUnmounted(() => {
   gap: 8px;
   padding: 6px 12px;
   font-size: 13px;
-  border-bottom: 1px solid #f5f7fa;
-  font-family: Consolas, Monaco, monospace;
+  border-bottom: 1px solid var(--el-fill-color);
+  font-family: var(--app-font-mono);
 }
 
 .log-item:last-child {
@@ -2157,11 +2171,11 @@ onUnmounted(() => {
 }
 
 .log-item:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .log-timestamp {
-  color: #909399;
+  color: var(--ink-text-secondary);
   flex-shrink: 0;
   font-size: 12px;
 }
@@ -2175,7 +2189,7 @@ onUnmounted(() => {
 .log-message {
   white-space: pre-wrap;
   word-break: break-all;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .log-level-error .log-message {
@@ -2203,10 +2217,10 @@ onUnmounted(() => {
 }
 
 .current-node {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border-radius: 8px;
   padding: 8px;
-  border: 2px solid #409eff;
+  border: 2px solid var(--el-color-primary);
 }
 
 .node-running-indicator {
@@ -2214,7 +2228,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   margin-top: 8px;
-  color: #409eff;
+  color: var(--el-color-primary);
   font-size: 13px;
 }
 
@@ -2232,7 +2246,7 @@ onUnmounted(() => {
 }
 
 .node-output-content pre {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   padding: 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -2252,7 +2266,7 @@ onUnmounted(() => {
 .node-logs {
   margin-top: 12px;
   padding: 8px 12px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   border-radius: 6px;
   max-height: 400px;
   overflow-y: auto;
@@ -2260,7 +2274,7 @@ onUnmounted(() => {
 
 .node-log-item {
   padding: 4px 0;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   font-size: 13px;
 }
 
@@ -2275,7 +2289,7 @@ onUnmounted(() => {
 .node-log-detail {
   margin-top: 4px;
   cursor: pointer;
-  color: #909399;
+  color: var(--ink-text-secondary);
   font-size: 12px;
 }
 
@@ -2315,7 +2329,7 @@ onUnmounted(() => {
   word-break: break-all;
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   margin: 0;
 }
 

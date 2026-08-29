@@ -65,7 +65,11 @@
             v-for="entity in filteredGraphEntities"
             :key="entity.id"
             class="kv-graph-entity"
+            role="button"
+            tabindex="0"
+            :aria-label="'查看实体：' + entity.name"
             @click="$emit('open-entity-detail', entity)"
+            @keydown.enter.prevent="$emit('open-entity-detail', entity)"
           >
             <div class="kv-graph-entity__name">{{ entity.name }}</div>
             <div class="kv-graph-entity__type">

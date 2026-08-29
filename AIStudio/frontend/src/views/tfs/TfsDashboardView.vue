@@ -1,9 +1,5 @@
 <template>
-  <div class="tfs-dashboard">
-    <div class="page-header">
-      <h2>TFS 看板</h2>
-      <el-button :icon="Refresh" @click="loadAll" :loading="loading">刷新数据</el-button>
-    </div>
+  <page-container title="TFS 看板" no-card>
 
     <!-- 库存待办 -->
     <div class="section" v-loading="workloadLoading">
@@ -100,7 +96,7 @@
       <el-table :data="detailItems" stripe max-height="500" v-loading="detailLoading">
         <el-table-column prop="id" label="ID" width="80">
           <template #default="{ row }">
-            <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: #409EFF; text-decoration: none;">{{ row.id }}</a>
+            <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: var(--el-color-primary); text-decoration: none;">{{ row.id }}</a>
           </template>
         </el-table-column>
         <el-table-column prop="title" label="标题" min-width="250">
@@ -135,7 +131,7 @@
       <el-table :data="weeklyDetailItems" stripe max-height="500">
         <el-table-column prop="id" label="ID" width="80">
           <template #default="{ row }">
-            <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: #409EFF; text-decoration: none;">{{ row.id }}</a>
+            <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: var(--el-color-primary); text-decoration: none;">{{ row.id }}</a>
           </template>
         </el-table-column>
         <el-table-column prop="title" label="标题" min-width="300" />
@@ -150,12 +146,12 @@
 
     <!-- 异常明细弹窗 -->
     <el-dialog v-model="exceptionDetailVisible" :title="exceptionDetailTitle" width="900px">
-      <div style="margin-bottom: 8px; color: #909399">共 {{ exceptionDetailItems.length }} 条</div>
+      <div style="margin-bottom: 8px; color: var(--ink-text-secondary)">共 {{ exceptionDetailItems.length }} 条</div>
       <el-table :data="exceptionDetailItems" stripe max-height="450" v-loading="exceptionDetailLoading" @selection-change="onExceptionSelectionChange">
         <el-table-column type="selection" width="45" v-if="currentExceptionFixable" />
         <el-table-column prop="id" label="ID" width="80">
           <template #default="{ row }">
-            <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: #409EFF; text-decoration: none;">{{ row.id }}</a>
+            <a :href="getWorkItemUrl(row.id)" target="_blank" style="color: var(--el-color-primary); text-decoration: none;">{{ row.id }}</a>
           </template>
         </el-table-column>
         <el-table-column prop="title" label="标题" min-width="250" />
@@ -183,7 +179,7 @@
         <el-button @click="exceptionDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
@@ -209,14 +205,14 @@ const weekly = ref<WeeklyData>({ total: 0, byPerson: {} })
 const daily = ref<DailyData>({ stats: {}, total: 0 })
 
 const stockItems = [
-  { key: '统计库存需求', label: '统计库存需求', color: '#409EFF' },
-  { key: '统计库存需求（全）', label: '统计库存需求（全）', color: '#409EFF' },
+  { key: '统计库存需求', label: '统计库存需求', color: 'var(--el-color-primary)' },
+  { key: '统计库存需求（全）', label: '统计库存需求（全）', color: 'var(--el-color-primary)' },
   { key: '库存软质', label: '库存软质', color: '#E6A23C' },
   { key: '库存软质（全）', label: '库存软质（全）', color: '#E6A23C' },
   { key: '库存软质（高）', label: '库存软质（高）', color: '#F56C6C' },
   { key: '库存Bug', label: '库存Bug', color: '#F56C6C' },
   { key: '库存软质（单需求）', label: '库存软质（单需求）', color: '#E6A23C' },
-  { key: '未排期需求', label: '未排期需求', color: '#909399' }
+  { key: '未排期需求', label: '未排期需求', color: 'var(--ink-text-secondary)' }
 ]
 
 const dailyItems = [
@@ -435,16 +431,14 @@ onMounted(() => { loadAll(); loadTfsServerUrl() })
 </script>
 
 <style scoped>
-.tfs-dashboard { padding: 20px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
+.tfs-dashboard { }
 .section { margin-bottom: 24px; }
-.section h3 { font-size: 16px; font-weight: 600; color: #303133; margin-bottom: 12px; padding-left: 8px; border-left: 3px solid #409EFF; }
+.section h3 { font-size: 16px; font-weight: 600; color: var(--ink-text); margin-bottom: 12px; padding-left: 8px; border-left: 3px solid var(--el-color-primary); }
 .stat-card { text-align: center; cursor: default; margin-bottom: 12px; }
-.stat-card .stat-value { font-size: 28px; font-weight: 700; color: #303133; margin-bottom: 4px; }
-.stat-card .stat-label { font-size: 13px; color: #909399; margin-bottom: 6px; }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--ink-text); margin-bottom: 4px; }
+.stat-card .stat-label { font-size: 13px; color: var(--ink-text-secondary); margin-bottom: 6px; }
 .stat-card .stat-actions { margin-top: 4px; }
-.stat-card-total .stat-value { color: #409EFF; }
+.stat-card-total .stat-value { color: var(--el-color-primary); }
 .stat-card-danger .stat-value { color: #F56C6C; }
 .stat-card-warning .stat-value { color: #E6A23C; }
 .truncate-text { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }

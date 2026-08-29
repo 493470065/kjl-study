@@ -1,6 +1,5 @@
 <template>
-  <div class="compute-view">
-    <h2>本地算力</h2>
+  <page-container title="本地算力" no-card>
 
     <el-tabs v-model="activeTab">
       <!-- Tab 1: 计算节点 -->
@@ -42,7 +41,7 @@
           </el-button>
         </div>
 
-        <el-table :data="nodes" v-loading="loadingNodes" border stripe @row-click="openNodeDrawer">
+        <el-table :data="nodes" v-loading="loadingNodes" stripe @row-click="openNodeDrawer">
           <el-table-column prop="name" label="名称" min-width="140" />
           <el-table-column prop="nodeId" label="节点 ID" min-width="180" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="100" align="center">
@@ -109,7 +108,7 @@
             </el-descriptions>
 
             <h4 style="margin: 16px 0 8px;">任务历史</h4>
-            <el-table :data="nodeTasks" v-loading="loadingNodeTasks" border stripe max-height="300">
+            <el-table :data="nodeTasks" v-loading="loadingNodeTasks" stripe max-height="300">
               <el-table-column prop="taskId" label="任务 ID" min-width="140" />
               <el-table-column prop="taskType" label="类型" width="100" />
               <el-table-column prop="status" label="状态" width="90" align="center">
@@ -127,7 +126,7 @@
 
       <!-- Tab 2: 任务列表 -->
       <el-tab-pane label="任务列表" name="tasks">
-        <el-table :data="tasks" v-loading="loadingTasks" border stripe max-height="500" @row-click="openTaskDrawer">
+        <el-table :data="tasks" v-loading="loadingTasks" stripe max-height="500" @row-click="openTaskDrawer">
           <el-table-column prop="taskId" label="任务 ID" min-width="160" show-overflow-tooltip />
           <el-table-column prop="nodeId" label="节点 ID" min-width="160" show-overflow-tooltip />
           <el-table-column prop="taskType" label="任务类型" width="120" />
@@ -158,8 +157,10 @@
             v-model:current-page="taskPage"
             v-model:page-size="taskPageSize"
             :total="taskTotal"
-            layout="total, prev, pager, next"
+            background
+            layout="total, sizes, prev, pager, next, jumper"
             @current-change="loadTasks"
+            @size-change="() => { taskPage = 1; loadTasks() }"
           />
         </div>
       </el-tab-pane>
@@ -218,11 +219,11 @@
           <li>
             <strong>运行连接命令：</strong>
             <div style="margin: 8px 0;">
-              <p style="margin-bottom: 4px; color: #909399;">使用 Java 客户端（推荐）</p>
+              <p style="margin-bottom: 4px; color: var(--ink-text-secondary);">使用 Java 客户端（推荐）</p>
               <pre class="code-block">java -jar agent-client.jar --server=ws://localhost:8090 --token=YOUR_JWT_TOKEN</pre>
             </div>
             <div style="margin: 8px 0;">
-              <p style="margin-bottom: 4px; color: #909399;">或使用 Node.js 客户端</p>
+              <p style="margin-bottom: 4px; color: var(--ink-text-secondary);">或使用 Node.js 客户端</p>
               <pre class="code-block">npx winning-agent --server=ws://localhost:8090 --token=YOUR_JWT_TOKEN</pre>
             </div>
           </li>
@@ -235,12 +236,16 @@
         <el-button type="primary" @click="guideDialogVisible = false">知道了</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useStatusTag } from '@/composables/useStatusTag'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { Connection, Delete, Refresh, View } from '@element-plus/icons-vue'
 import {
   getNodes,
@@ -252,6 +257,7 @@ import {
   type LocalComputeTask,
   type ComputeStats
 } from '@/api/compute'
+import { formatDateTime } from '@/utils/format'
 
 const activeTab = ref('nodes')
 
@@ -280,35 +286,20 @@ const selectedNode = ref<LocalComputeNode | null>(null)
 const nodeTasks = ref<LocalComputeTask[]>([])
 const loadingNodeTasks = ref(false)
 
-function nodeStatusTagType(status: string): string {
-  switch (status) {
-    case 'ONLINE': return 'success'
-    case 'OFFLINE': return 'info'
-    case 'BUSY': return 'warning'
-    case 'ERROR': return 'danger'
-    default: return 'info'
-  }
-}
+// 状态徽章统一走全站映射
+const { statusType: nodeStatusTagType, statusLabel: nodeStatusLabel } = useStatusTag()
 
 function nodeStatusColor(status: string): string {
   switch (status) {
     case 'ONLINE': return '#67c23a'
-    case 'OFFLINE': return '#909399'
+    case 'OFFLINE': return 'var(--ink-text-secondary)'
     case 'BUSY': return '#e6a23c'
     case 'ERROR': return '#f56c6c'
-    default: return '#909399'
+    default: return 'var(--ink-text-secondary)'
   }
 }
 
-function nodeStatusLabel(status: string): string {
-  switch (status) {
-    case 'ONLINE': return '在线'
-    case 'OFFLINE': return '离线'
-    case 'BUSY': return '忙碌'
-    case 'ERROR': return '异常'
-    default: return status
-  }
-}
+/* nodeStatusLabel 已由 useStatusTag 统一提供 */
 
 async function loadNodes() {
   loadingNodes.value = true
@@ -337,13 +328,13 @@ async function openNodeDrawer(row: LocalComputeNode) {
 }
 
 async function handleDeleteNode(row: LocalComputeNode) {
+  if (!await confirmDelete(`节点 "${row.name}"（${row.nodeId}）`)) return
   try {
-    await ElMessageBox.confirm(`确定删除节点 "${row.name}"（${row.nodeId}）？`, '确认', { type: 'warning' })
     await deleteNode(row.nodeId)
     ElMessage.success('删除成功')
     await loadNodes()
-  } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error('删除失败: ' + (e?.response?.data?.error || e.message))
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -363,31 +354,11 @@ const taskTotal = ref(0)
 const taskDrawerVisible = ref(false)
 const selectedTask = ref<LocalComputeTask | null>(null)
 
-function taskStatusTagType(status: string): string {
-  switch (status) {
-    case 'SUCCESS': return 'success'
-    case 'FAILED': return 'danger'
-    case 'RUNNING': return 'primary'
-    case 'PENDING': return 'info'
-    case 'TIMEOUT': return 'warning'
-    default: return 'info'
-  }
-}
+// 任务状态同样走全站映射（修正原 RUNNING=primary 的语义错误）
+const { statusType: taskStatusTagType, statusLabel: taskStatusLabel } = useStatusTag()
 
-function taskStatusLabel(status: string): string {
-  switch (status) {
-    case 'SUCCESS': return '成功'
-    case 'FAILED': return '失败'
-    case 'RUNNING': return '运行中'
-    case 'PENDING': return '等待中'
-    case 'TIMEOUT': return '超时'
-    default: return status
-  }
-}
-
-function formatTime(s?: string) {
-  if (!s) return ''
-  return s.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : ''
 }
 
 function formatDuration(start?: string, end?: string) {
@@ -455,13 +426,13 @@ onMounted(() => {
 .stat-value {
   font-size: 28px;
   font-weight: bold;
-  color: #409eff;
+  color: var(--el-color-primary);
   line-height: 1.2;
 }
 
 .stat-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
 }
 
@@ -488,8 +459,8 @@ onMounted(() => {
 }
 
 .code-block {
-  background: #f5f7fa;
-  border: 1px solid #e4e7ed;
+  background: var(--el-fill-color);
+  border: 1px solid var(--paper-border);
   border-radius: 4px;
   padding: 12px;
   font-size: 13px;
@@ -497,12 +468,12 @@ onMounted(() => {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--app-font-mono);
 }
 
 .payload {
-  background: #f5f7fa;
-  border: 1px solid #e4e7ed;
+  background: var(--el-fill-color);
+  border: 1px solid var(--paper-border);
   border-radius: 4px;
   padding: 12px;
   font-size: 13px;
@@ -511,6 +482,6 @@ onMounted(() => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--app-font-mono);
 }
 </style>

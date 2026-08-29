@@ -1,11 +1,16 @@
 <template>
   <el-container class="app-container" :class="{ 'login-layout': isLogin }">
-    <el-aside v-if="!isLogin" width="200px">
-      <div class="logo">景磊的AI工作站</div>
+    <el-aside v-if="!isLogin" :width="sidebarCollapsed ? '64px' : '200px'" :class="{ collapsed: sidebarCollapsed }">
+      <div class="logo">
+        <span v-if="!sidebarCollapsed">景磊的AI工作站</span>
+        <span v-else>站</span>
+      </div>
       <el-menu :default-active="activeMenu" router :default-openeds="systemSubMenuOpen"
-          background-color="#1e293b" text-color="#cbd5e1" active-text-color="#fff">
+          :collapse="sidebarCollapsed" :collapse-transition="false"
+          background-color="transparent" text-color="#d8d2c2" active-text-color="var(--paper)">
         <!-- 工作区 -->
-        <el-menu-item-group>
+        <el-menu-item-group v-if="anyAccess(['/chat', '/requirements'])">
+          <template #title>工作区</template>
           <el-menu-item v-if="auth.hasMenuAccess('/chat')" index="/chat">
             <el-icon><ChatDotRound /></el-icon>
             <span>AI 对话</span>
@@ -17,7 +22,8 @@
         </el-menu-item-group>
 
         <!-- 资产与能力 -->
-        <el-menu-item-group>
+        <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents'])">
+          <template #title>资产与能力</template>
           <el-menu-item v-if="auth.hasMenuAccess('/knowledge')" index="/knowledge">
             <el-icon><Collection /></el-icon>
             <span>知识库</span>
@@ -33,7 +39,8 @@
         </el-menu-item-group>
 
         <!-- 业务编排 -->
-        <el-menu-item-group>
+        <el-menu-item-group v-if="anyAccess(['/workflows', '/automate'])">
+          <template #title>业务编排</template>
           <el-menu-item v-if="auth.hasMenuAccess('/workflows')" index="/workflows">
             <el-icon><Share /></el-icon>
             <span>工作流编排</span>
@@ -45,97 +52,50 @@
         </el-menu-item-group>
 
         <!-- 连接与基座 -->
-        <el-menu-item-group>
+        <el-menu-item-group v-if="anyAccess(['/mcp', '/providers'])">
+          <template #title>连接与基座</template>
           <el-menu-item v-if="auth.hasMenuAccess('/mcp')" index="/mcp">
             <el-icon><Connection /></el-icon>
             <span>MCP 管理</span>
           </el-menu-item>
           <el-menu-item v-if="auth.hasMenuAccess('/providers')" index="/providers">
             <el-icon><Cpu /></el-icon>
-            <span>LLM管理</span>
+            <span>LLM 管理</span>
           </el-menu-item>
         </el-menu-item-group>
 
-        <!-- 隐藏菜单（保留代码，v-if="false" 永不显示，改 true 即可恢复） -->
-        <template v-if="false">
-        <el-menu-item index="/">
-          <el-icon><HomeFilled /></el-icon>
-          <span>首页</span>
-        </el-menu-item>
-        <el-menu-item index="/skills">
-          <el-icon><Files /></el-icon>
-          <span>Skill 管理</span>
-        </el-menu-item>
-        <el-menu-item index="/monitor">
-          <el-icon><Monitor /></el-icon>
-          <span>运行时监控</span>
-        </el-menu-item>
-        <el-menu-item index="/sandbox">
-          <el-icon><Monitor /></el-icon>
-          <span>沙箱管理</span>
-        </el-menu-item>
-        <el-menu-item index="/audit">
-          <el-icon><DataLine /></el-icon>
-          <span>审计日志</span>
-        </el-menu-item>
-        <el-menu-item index="/evaluation">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>AI 评估</span>
-        </el-menu-item>
-        <el-menu-item index="/structured">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>结构化输出</span>
-        </el-menu-item>
-        <el-menu-item index="/compute">
-          <el-icon><Monitor /></el-icon>
-          <span>本地算力</span>
-        </el-menu-item>
-        <el-menu-item index="/team">
-          <el-icon><OfficeBuilding /></el-icon>
-          <span>团队协作</span>
-        </el-menu-item>
-        </template>
-        <template v-if="false">
-        <el-menu-item index="/ops-dashboard">
-          <el-icon><DataBoard /></el-icon>
-          <span>运营平台</span>
-        </el-menu-item>
-        <el-menu-item index="/dev-env">
-          <el-icon><Monitor /></el-icon>
-          <span>开发环境</span>
-        </el-menu-item>
-        <el-sub-menu index="system-group">
-          <template #title>
-            <el-icon><Setting /></el-icon>
-            <span>系统配置</span>
-          </template>
-          <el-menu-item index="/settings">系统配置</el-menu-item>
-          <el-menu-item index="/scheduled-tasks">定时任务</el-menu-item>
-          <el-menu-item index="/webhook">Webhook 通知</el-menu-item>
-          <el-menu-item index="/product-lines">产品线管理</el-menu-item>
-          <el-menu-item index="/repository">仓库管理</el-menu-item>
-          <el-menu-item index="/users">账户管理</el-menu-item>
-        </el-sub-menu>
-        </template>
+        <!--
+          其余页面（运行时监控、沙箱、审计、评估、结构化输出、本地算力、团队协作、
+          运营看板、开发环境、系统配置、定时任务、Webhook、产品线、仓库、账户管理）
+          维持隐藏：路由仍可直接通过 URL 访问，需要开放时在此按 hasMenuAccess 添加即可。
+        -->
       </el-menu>
     </el-aside>
     <el-container>
       <el-header v-if="!isLogin">
         <div class="header-left">
+          <el-button text class="sidebar-collapse-btn"
+                     :aria-label="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+                     @click="sidebarCollapsed = !sidebarCollapsed">
+            <el-icon><Fold v-if="!sidebarCollapsed" /><Expand v-else /></el-icon>
+          </el-button>
           <span class="header-title">景磊的AI工作站</span>
         </div>
         <div class="header-right">
           <el-dropdown trigger="click">
             <span class="header-user-dropdown">
-              <el-avatar :size="32" shape="square" style="background: #6366f1; vertical-align: middle;">
+              <el-avatar :size="32" shape="square" style="background: var(--seal); vertical-align: middle;">
                 {{ (auth.user?.displayName || auth.user?.username || '?').charAt(0).toUpperCase() }}
               </el-avatar>
               <span class="header-user-name">{{ auth.user?.displayName || auth.user?.username }}</span>
-              <el-tag size="small" :type="auth.isAdmin ? 'danger' : 'info'">{{ auth.user?.role }}</el-tag>
+              <el-tag size="small" :type="auth.isAdmin ? 'primary' : 'info'">{{ auth.user?.role }}</el-tag>
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item @click="router.push('/personal-config')">
+                  <el-icon><Setting /></el-icon>个人配置
+                </el-dropdown-item>
                 <el-dropdown-item @click="pwdDialogVisible = true">
                   <el-icon><Lock /></el-icon>修改密码
                 </el-dropdown-item>
@@ -177,9 +137,9 @@
 
   <!-- 个人令牌弹窗 -->
   <el-dialog v-if="!isLogin" v-model="tokenDialogVisible" title="个人 API 令牌" width="480px">
-    <p style="color: #909399; font-size: 13px; margin-bottom: 16px;">用于 MCP 服务认证，请妥善保管，泄露后可重新生成。</p>
+    <p style="color: var(--ink-text-secondary); font-size: 13px; margin-bottom: 16px;">用于 MCP 服务认证，请妥善保管，泄露后可重新生成。</p>
     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
-      <el-input :model-value="myToken" readonly style="font-family: monospace;">
+      <el-input :model-value="myToken" readonly style="font-family: var(--app-font-mono);">
         <template #append>
           <el-button @click="handleCopyToken">复制</el-button>
         </template>
@@ -193,11 +153,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { HomeFilled, ChatDotRound, Document, Collection, Connection, List, User, Monitor, Setting, DataLine, OfficeBuilding, Cpu, Files, Key, Share, DataBoard, DataAnalysis, ArrowDown, Lock, SwitchButton } from '@element-plus/icons-vue'
+import { HomeFilled, ChatDotRound, Document, Collection, Connection, List, User, Monitor, Setting, DataLine, OfficeBuilding, Cpu, Files, Key, Share, DataBoard, DataAnalysis, ArrowDown, Lock, SwitchButton, Fold, Expand, Clock, Link } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 
@@ -209,6 +169,19 @@ const systemSubMenuOpen = computed(() =>
   ['/settings', '/scheduled-tasks', '/product-lines', '/repository', '/users', '/webhook'].includes(route.path) ? ['system-group'] : []
 )
 const isLogin = computed(() => route.path === '/login')
+
+/** 分组内任一菜单可访问时显示该分组（权限过滤后避免出现空分组/孤立分隔线） */
+function anyAccess(paths: string[]): boolean {
+  return auth.isAdmin || paths.some(p => auth.hasMenuAccess(p))
+}
+
+// 侧栏折叠：窄屏（≤1280px）自动收起为图标栏，可手动切换
+const sidebarCollapsed = ref(window.innerWidth <= 1280)
+onMounted(() => {
+  const mq = window.matchMedia('(max-width: 1280px)')
+  const onChange = (e: MediaQueryListEvent) => { sidebarCollapsed.value = e.matches }
+  mq.addEventListener?.('change', onChange)
+})
 
 function handleLogout() {
   auth.logout()
@@ -302,14 +275,66 @@ async function handleChangePassword() {
 
 <style>
 :root {
-  --el-color-primary: #6366f1;
-  --el-color-primary-light-3: #818cf8;
-  --el-color-primary-light-5: #a5b4fc;
-  --el-color-primary-light-7: #c7d2fe;
-  --el-color-primary-light-8: #dde3fe;
-  --el-color-primary-light-9: #eef2ff;
-  --el-color-primary-dark-2: #4f46e5;
+  /* ===== 江南水墨主题 · 色板 ===== */
+  /* 黛青：主题色（靛青颜料，沉稳如墨） */
+  --el-color-primary: #41556d;
+  --el-color-primary-light-3: #6e7f91;
+  --el-color-primary-light-5: #93a1b1;
+  --el-color-primary-light-7: #bcc4cf;
+  --el-color-primary-light-8: #d5dae1;
+  --el-color-primary-light-9: #edeff3;
+  --el-color-primary-dark-2: #334356;
+  /* 墨色：侧栏框架 */
+  --ink-deep: #201f1c;
+  --ink: #2c2a26;
+  --ink-light: #4a4741;
+  --ink-text-on-dark: #d8d2c2;
+  /* 宣纸：页面底色 */
+  --paper: #f6f3ec;
+  --paper-light: #f0ebdf;
+  --paper-card: #fbf9f4;
+  --paper-border: #e3ddce;
+  /* 朱砂：印章点缀 */
+  --seal: #a8452f;
+  /* 数据可视化色板：流程事件、图谱节点、图表系列专用（不属于语义色，不与状态色混用） */
+  --viz-blue: #2196f3;
+  --viz-indigo: #337ecc;
+  --viz-orange: #ff9800;
+  --viz-purple: #a855f7;
+  --viz-violet: #722ed1;
+  --viz-magenta: #eb2f96;
+  --viz-cyan: #00bcd4;
+  --viz-teal: #1abc9c;
+  --viz-green: #2ecc71;
+  --viz-slate: #34495e;
+  --viz-gray: #73767a;
+  /* 墨分五色：文本（次级文字加深至 ≥4.5:1，满足 WCAG AA） */
+  --ink-text: #3d3a34;
+  --ink-text-regular: #5f5b52;
+  --ink-text-secondary: #6f6a5e;
+
   --el-border-radius-base: 8px;
+  /* Element Plus 文本/边框/填充同步为水墨色板 */
+  --el-text-color-primary: var(--ink-text);
+  --el-text-color-regular: var(--ink-text-regular);
+  --el-text-color-secondary: var(--ink-text-secondary);
+  --el-text-color-placeholder: #b8b1a0;
+  --el-border-color: #d8d0bf;
+  --el-border-color-light: var(--paper-border);
+  --el-border-color-lighter: #ebe6d8;
+  --el-border-color-extra-light: #f1ede1;
+  --el-fill-color: #f3efe4;
+  --el-fill-color-light: #f5f2ea;
+  --el-fill-color-lighter: #f8f5ed;
+  --el-fill-color-extra-light: var(--paper-card);
+  --el-bg-color: var(--paper-card);
+  --el-bg-color-page: var(--paper);
+  --el-card-bg-color: var(--paper-card);
+  /* 全站统一字体：正文用系统字体栈（中文落到微软雅黑），等宽字体用于代码/密钥/ID */
+  --app-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --app-font-mono: Consolas, Menlo, Monaco, "Courier New", monospace;
+  /* Element Plus 组件字体同步为全站正文字体 */
+  --el-font-family: var(--app-font-sans);
 }
 
 * {
@@ -322,13 +347,56 @@ html, body, #app {
   height: 100%;
 }
 
+body {
+  font-family: var(--app-font-sans);
+  color: var(--ink-text);
+  /* 宣纸底 + 远山薄雾：黛色晕染由远及近，似江南烟雨 */
+  background:
+    radial-gradient(ellipse 52% 36% at 88% -6%, rgba(65, 85, 109, 0.08), transparent 65%),
+    radial-gradient(ellipse 40% 30% at -4% 106%, rgba(65, 85, 109, 0.07), transparent 65%),
+    linear-gradient(180deg, #f7f4ec 0%, var(--el-fill-color) 100%);
+  background-attachment: fixed;
+}
+
 .app-container {
   height: 100%;
 }
 
+/* 侧栏：浓墨立轴，自上而下渐深 */
 .el-aside {
-  background-color: #1e293b;
+  background: linear-gradient(180deg, #2e2c27 0%, #232220 55%, var(--ink-deep) 100%);
   overflow-y: auto;
+}
+
+.el-aside .el-menu {
+  background-color: transparent !important;
+}
+
+/* 折叠态：窄栏图标菜单 */
+.el-aside.collapsed .el-menu-item {
+  margin: 2px 6px;
+  width: calc(100% - 12px);
+  padding: 0 !important;
+  display: flex;
+  justify-content: center;
+}
+
+.el-aside.collapsed .el-sub-menu__title {
+  margin: 2px 6px;
+  width: calc(100% - 12px);
+  padding: 0 !important;
+  display: flex;
+  justify-content: center;
+}
+
+.el-aside.collapsed .logo {
+  font-size: 18px;
+  padding: 0;
+}
+
+.sidebar-collapse-btn {
+  color: var(--ink-text-regular);
+  font-size: 16px;
 }
 
 .el-aside .logo {
@@ -338,12 +406,30 @@ html, body, #app {
   justify-content: center;
   font-size: 15px;
   font-weight: bold;
-  color: #f1f5f9;
-  background: #0f172a;
-  border-bottom: 1px solid #334155;
+  color: var(--paper);
+  background: var(--ink-deep);
+  border-bottom: 1px solid var(--ink-light);
   padding: 0 12px;
   text-align: center;
   letter-spacing: 0.5px;
+}
+
+/* Logo 末尾的朱砂小印 */
+.el-aside .logo::after {
+  content: '景';
+  margin-left: 8px;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--seal);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
 }
 
 /* 菜单项间距 */
@@ -354,10 +440,11 @@ html, body, #app {
 }
 
 .el-aside .el-menu-item.is-active {
-  background-color: #334155 !important;
+  background-color: var(--ink-light) !important;
   position: relative;
 }
 
+/* 激活菜单左侧一笔朱砂 */
 .el-aside .el-menu-item.is-active::before {
   content: '';
   position: absolute;
@@ -366,72 +453,60 @@ html, body, #app {
   transform: translateY(-50%);
   width: 3px;
   height: 20px;
-  background: #6366f1;
+  background: var(--seal);
   border-radius: 0 3px 3px 0;
 }
 
 .el-aside .el-menu-item:hover {
-  background-color: #334155 !important;
+  background-color: var(--ink-light) !important;
 }
 
-/* 菜单分组分隔符（横线代替文字标题） */
+/* 菜单分组标题：小字淡墨，让分组意图可感知（替代原先"分隔线代替组名"的做法） */
 .el-aside .el-menu-item-group__title {
-  display: none;
+  font-size: 11px;
+  color: #9a9382;
+  letter-spacing: 2px;
+  padding: 12px 20px 4px;
+}
+
+.el-aside.collapsed .el-menu-item-group__title {
+  padding: 8px 0 2px;
 }
 
 .el-aside .el-menu-item-group {
   position: relative;
-  margin-top: 8px;
-  padding-top: 8px;
 }
 
-.el-aside .el-menu-item-group::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 16px;
-  right: 16px;
-  height: 1px;
-  background: #334155;
-}
-
-.el-aside .el-menu-item-group:first-of-type {
-  margin-top: 0;
-  padding-top: 0;
-}
-
-.el-aside .el-menu-item-group:first-of-type::before {
-  display: none;
-}
-
-/* 子菜单适配深色主题 */
+/* 子菜单适配墨色主题 */
 .el-aside .el-sub-menu__title {
-  color: #cbd5e1 !important;
+  color: var(--ink-text-on-dark) !important;
   margin: 2px 8px;
   width: calc(100% - 16px);
   border-radius: 6px;
 }
 
 .el-aside .el-sub-menu__title:hover {
-  background-color: #334155 !important;
+  background-color: var(--ink-light) !important;
 }
 
 .el-aside .el-menu--inline .el-menu-item {
-  background-color: #0f172a !important;
+  background-color: var(--ink-deep) !important;
   margin: 1px 8px;
   padding-left: 48px !important;
 }
 
 .el-aside .el-menu--inline .el-menu-item.is-active {
-  background-color: #1e293b !important;
+  background-color: var(--ink) !important;
 }
 
+/* 顶栏：宣纸蒙纱，下缘一道淡墨 */
 .el-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e2e8f0;
-  background: #fff;
+  border-bottom: 1px solid var(--paper-border);
+  background: rgba(251, 249, 244, 0.88);
+  backdrop-filter: blur(8px);
   height: 58px !important;
   padding: 0 24px !important;
 }
@@ -441,15 +516,10 @@ html, body, #app {
   align-items: center;
 }
 
-.header-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
 .header-right {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
 .header-user-dropdown {
@@ -463,34 +533,25 @@ html, body, #app {
 }
 
 .header-user-dropdown:hover {
-  background: #f1f5f9;
+  background: var(--paper-light);
 }
 
 .header-user-name {
   font-size: 14px;
   font-weight: 500;
-  color: #1e293b;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
+  color: var(--ink-text);
 }
 
 .header-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
+  letter-spacing: 1px;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
+/* 主内容区：透出宣纸与远山底色 */
 .el-main {
-  background: #f8fafc;
+  background: transparent;
   padding: 24px;
   min-height: 0;
 }

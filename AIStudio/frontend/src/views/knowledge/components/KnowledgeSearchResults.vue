@@ -46,7 +46,11 @@
         v-for="(result, idx) in searchResults"
         :key="result.documentId + '-' + idx"
         class="kv-search-result"
+        role="button"
+        tabindex="0"
+        :aria-label="'查看文档：' + result.title"
         @click="$emit('open-detail', result.documentId)"
+        @keydown.enter.prevent="$emit('open-detail', result.documentId)"
       >
         <div class="kv-search-result__header">
           <span class="kv-search-result__title">{{ result.title }}</span>
@@ -148,7 +152,7 @@ defineEmits<{
 }
 
 .kv-search-result__title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
@@ -175,7 +179,7 @@ defineEmits<{
 }
 
 .kv-search-result__snippet :deep(mark) {
-  background: #fff3cd;
+  background: var(--el-color-warning-light-9, #fdf3d8);
   padding: 0 2px;
   border-radius: 2px;
 }

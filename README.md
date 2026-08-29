@@ -4,7 +4,7 @@ kjl 的学习仓库。
 
 ## 目录结构
 
-- `AIStudio/` —— 景磊的AI乐园站（Vue3 + Spring Boot + MySQL 全栈项目）
+- `AIStudio/` —— 景磊的AI工作站（Vue3 + Spring Boot + MySQL 全栈项目）
 
 ## AIStudio 使用说明
 

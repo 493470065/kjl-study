@@ -1,23 +1,36 @@
 <template>
   <page-container>
-    <!-- 顶部：百度首页风格居中搜索区 -->
+    <!-- 顶部：居中搜索区（保留 hero 布局，组件按 UED 规范升级） -->
     <div class="kv-hero">
       <div class="kv-hero__title">知识库</div>
       <div class="kv-searchbar">
-        <input
+        <el-input
           v-model="searchQuery"
+          size="large"
           class="kv-searchbar__input"
           placeholder="输入关键词，搜索知识库"
+          aria-label="知识库搜索"
+          clearable
+          :prefix-icon="Search"
           @keyup.enter="handleSearch"
+          @clear="clearSearch"
         />
-        <button class="kv-searchbar__btn" @click="handleSearch">搜索</button>
+        <el-button type="primary" size="large" class="kv-searchbar__btn"
+                   :loading="searchLoading" @click="handleSearch">
+          搜索
+        </el-button>
       </div>
       <div class="kv-hero__links">
         <span class="kv-hero__links-label">检索模式：</span>
-        <a class="kv-hero__link" :class="{ 'kv-hero__link--active': searchMode === 'default' }" @click="searchMode = 'default'">关键词</a>
-        <a class="kv-hero__link" :class="{ 'kv-hero__link--active': searchMode === 'semantic' }" @click="searchMode = 'semantic'">语义向量</a>
-        <a class="kv-hero__link" :class="{ 'kv-hero__link--active': searchMode === 'graphrag' }" @click="searchMode = 'graphrag'">GraphRAG</a>
-        <a v-if="isSearchMode" class="kv-hero__link kv-hero__link--clear" @click="clearSearch">清除搜索</a>
+        <!-- 规范 §4.2：模式切换必须键盘可达，用 radio-group 替代裸 <a> -->
+        <el-radio-group v-model="searchMode" size="small" aria-label="检索模式">
+          <el-radio-button value="default">关键词</el-radio-button>
+          <el-radio-button value="semantic">语义向量</el-radio-button>
+          <el-radio-button value="graphrag">GraphRAG</el-radio-button>
+        </el-radio-group>
+        <el-button v-if="isSearchMode" text type="primary" size="small" @click="clearSearch">
+          清除搜索
+        </el-button>
       </div>
     </div>
 
@@ -27,7 +40,7 @@
     </div>
 
     <div class="kv-content">
-      <!-- Pane 1: Documents (manual upload) —— 文书Spec 与 SOP文档 共用此上传式列表面板，按 sourceType 区分 -->
+      <!-- Pane 1: Documents (manual upload) —— 文书 Spec 与 SOP 文档 共用此上传式列表面板，按 sourceType 区分 -->
       <div v-show="activeTab === 'documents' || activeTab === 'sop'" class="kv-pane">
         <!-- 主操作栏：标题 + 搜索 + 主按钮 -->
         <div class="kv-toolbar">
@@ -108,7 +121,7 @@
           >
             <el-table-column label="标题" min-width="200">
               <template #default="{ row }">
-                <a class="kv-doc-title" @click.stop="openDetail(row)">{{ row.title }}</a>
+                <el-link class="kv-doc-title" type="primary" :underline="false" @click.stop="openDetail(row)">{{ row.title }}</el-link>
               </template>
             </el-table-column>
             <el-table-column label="分类" width="120">
@@ -181,22 +194,13 @@
             </el-table-column>
             <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
-                <el-button type="primary" text size="small" @click.stop="openDetail(row)">
+                <el-button type="primary" link size="small" @click.stop="openDetail(row)">
                   查看
                 </el-button>
-                <el-button v-if="row.sourceType === 'upload' || row.sourceType === 'FILE' || row.sourceType === 'TEXT' || row.sourceType === 'sop'" type="warning" text size="small" @click.stop="handleEdit(row)">
+                <el-button v-if="row.sourceType === 'upload' || row.sourceType === 'FILE' || row.sourceType === 'TEXT' || row.sourceType === 'sop'" type="warning" link size="small" @click.stop="handleEdit(row)">
                   编辑
                 </el-button>
-                <el-popconfirm
-                  title="确定要删除该文档吗？"
-                  confirm-button-text="删除"
-                  cancel-button-text="取消"
-                  @confirm="handleDelete(row.id)"
-                >
-                  <template #reference>
-                    <el-button type="danger" text size="small" @click.stop>删除</el-button>
-                  </template>
-                </el-popconfirm>
+                <el-button type="danger" link size="small" @click.stop="handleDelete(row.id)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -209,6 +213,7 @@
               :total="totalElements"
               :page-sizes="[10, 20, 50]"
               layout="total, sizes, prev, pager, next, jumper"
+              background
               @size-change="handleSizeChange"
               @current-change="handlePageChange"
             />
@@ -377,7 +382,7 @@
             <!-- 文件路径（主列，显示相对路径） -->
             <el-table-column label="文件路径" min-width="300">
               <template #default="{ row }">
-                <a class="kv-doc-title" @click.stop="openDetail(row)">{{ row.title }}</a>
+                <el-link class="kv-doc-title" type="primary" :underline="false" @click.stop="openDetail(row)">{{ row.title }}</el-link>
               </template>
             </el-table-column>
             <!-- 文件类型（从 tags 取扩展名） -->
@@ -425,19 +430,10 @@
             <!-- 操作 -->
             <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
-                <el-button type="primary" text size="small" @click.stop="openDetail(row)">
+                <el-button type="primary" link size="small" @click.stop="openDetail(row)">
                   查看
                 </el-button>
-                <el-popconfirm
-                  title="确定要删除该文档吗？"
-                  confirm-button-text="删除"
-                  cancel-button-text="取消"
-                  @confirm="handleDelete(row.id)"
-                >
-                  <template #reference>
-                    <el-button type="danger" text size="small" @click.stop>删除</el-button>
-                  </template>
-                </el-popconfirm>
+                <el-button type="danger" link size="small" @click.stop="handleDelete(row.id)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -450,6 +446,7 @@
               :total="totalElements"
               :page-sizes="[10, 20, 50]"
               layout="total, sizes, prev, pager, next, jumper"
+              background
               @size-change="handleSizeChange"
               @current-change="handlePageChange"
             />
@@ -730,7 +727,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, UploadInstance, UploadRawFile } from 'element-plus'
 import {
   Upload, UploadFilled, Document, EditPen, ArrowRight,
-  RefreshRight, DataAnalysis, Link
+  RefreshRight, DataAnalysis, Link, Search
 } from '@element-plus/icons-vue'
 import {
   knowledgeApi,
@@ -743,11 +740,13 @@ import { wikiApi, type WikiPage, type WikiSection } from '@/api/wiki'
 import { scanApi, type ScanPreview, type ScanResult } from '@/api/scan'
 import { graphApi, type GraphEntity, type GraphData, type GraphStats } from '@/api/graph'
 import { useMarkdown } from '@/composables/useMarkdown'
+import { useStatusTag } from '@/composables/useStatusTag'
 
 import KnowledgeFilters from './components/KnowledgeFilters.vue'
 import KnowledgeSearchResults from './components/KnowledgeSearchResults.vue'
 import WikiPageTab from './components/WikiPageTab.vue'
 import KnowledgeGraphTab from './components/KnowledgeGraphTab.vue'
+import { formatDateTime } from '@/utils/format'
 
 // ---- Composables ----
 const { renderMarkdown } = useMarkdown()
@@ -759,9 +758,9 @@ const activeTab = ref('documents')
 
 // 视图切换选项（分段切换器，替代原 Tab / 树形导航）
 const navOptions = [
-  { label: '文书Spec', value: 'documents' },
+  { label: '文书 Spec', value: 'documents' },
   { label: '代码扫描', value: 'scan' },
-  { label: 'SOP文档', value: 'sop' }
+  { label: 'SOP 文档', value: 'sop' }
 ]
 
 // Computed source type based on active tab
@@ -774,7 +773,7 @@ const currentSourceType = computed(() => {
 
 // 上传按钮文案 / 弹窗标题 / 入库 sourceType：SOP 视图独立成桶（sourceType='sop'）
 const isSopView = computed(() => activeTab.value === 'sop')
-const uploadButtonLabel = computed(() => isSopView.value ? '上传SOP文档' : '上传文档')
+const uploadButtonLabel = computed(() => isSopView.value ? '上传SOP 文档' : '上传文档')
 // 上传时写入的 sourceType：SOP 视图落 'sop'；其余视图返回 undefined 以沿用原有逻辑/后端默认值
 const uploadSourceType = computed<string | undefined>(() => isSopView.value ? 'sop' : undefined)
 
@@ -794,7 +793,8 @@ const searchQuery = ref('')
 const isSearchMode = ref(false)
 const searchResults = ref<SearchResult[]>([])
 const searchLoading = ref(false)
-const searchMode = ref<'default' | 'graphrag'>('default')
+// 三种检索模式：关键词 / 语义向量 / GraphRAG（原先类型漏了 'semantic'）
+const searchMode = ref<'default' | 'semantic' | 'graphrag'>('default')
 const graphContexts = ref<GraphContext[]>([])
 const mergedContext = ref('')
 
@@ -816,7 +816,7 @@ const dialogVisible = computed({
 
 const dialogTitle = computed(() => {
   if (editDocId.value) return '编辑文档'
-  return isSopView.value ? '上传SOP文档' : '上传知识文档'
+  return isSopView.value ? '上传SOP 文档' : '上传知识文档'
 })
 
 const uploadMode = ref<'file' | 'text' | 'link'>('file')
@@ -862,7 +862,7 @@ const FIXED_COLUMNS = [
 const fixedColumnVisibility = ref<Record<string, boolean>>({})
 const FIXED_COLUMN_KEYS: string[] = FIXED_COLUMNS.map(c => c.key)
 
-// 扫描 Tab 专用列定义（与文书Spec Tab 独立）
+// 扫描 Tab 专用列定义（与文书 Spec Tab 独立）
 const SCAN_FIXED_COLUMNS = [
   { key: 'productLine', label: '产品线', defaultVisible: false },
   { key: 'createdAt', label: '创建时间', defaultVisible: true }  // 扫描 Tab 默认显示创建时间
@@ -1001,15 +1001,15 @@ const entityDetailLoading = ref(false)
 
 // ---- Category color mapping ----
 const categoryColors: Record<string, string> = {
-  '开发规范': '#409EFF',
+  '开发规范': 'var(--el-color-primary)',
   '业务规则': '#67C23A',
   'CLAUDE.md': '#E6A23C',
-  '技术文档': '#909399',
+  '技术文档': 'var(--ink-text-secondary)',
   '其他': '#F56C6C'
 }
 
 function getCategoryColor(category: string): string {
-  return categoryColors[category] || '#909399'
+  return categoryColors[category] || 'var(--ink-text-secondary)'
 }
 
 function getProductLineDisplayName(name: string): string {
@@ -1030,20 +1030,8 @@ function parseTags(tags: string): string[] {
   return tags.split(/[,，]/).map(t => t.trim()).filter(Boolean)
 }
 
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '-'
-  try {
-    const d = new Date(dateStr)
-    return d.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  } catch {
-    return dateStr
-  }
+function formatDate(dateStr?: string): string {
+  return dateStr ? formatDateTime(dateStr) : '-'
 }
 
 function truncate(text: string | undefined, maxLen: number): string {
@@ -1130,7 +1118,7 @@ async function fetchColumns() {
       fvis[c.key] = savedFixed[c.key] !== undefined ? savedFixed[c.key] : c.defaultVisible
     }
     fixedColumnVisibility.value = fvis
-    // 扫描 Tab 列显隐（独立于文书Spec Tab）
+    // 扫描 Tab 列显隐（独立于文书 Spec Tab）
     const savedScanFixed = loadScanFixedColumnVisibility()
     const sfvis: Record<string, boolean> = {}
     for (const c of SCAN_FIXED_COLUMNS) {
@@ -1361,6 +1349,7 @@ async function openDetailById(id: number) {
 }
 
 async function handleDelete(id: number) {
+  if (!await confirmDelete('该文档')) return
   try {
     await knowledgeApi.deleteDocument(id)
     ElMessage.success('删除成功')
@@ -1580,25 +1569,8 @@ function parseWikiConcepts(concepts: string): string[] {
   return concepts.split(/[,，]/).map(c => c.trim()).filter(Boolean)
 }
 
-function getWikiStatusType(status: string): 'success' | 'warning' | 'danger' | 'primary' | 'info' {
-  const typeMap: Record<string, 'success' | 'warning' | 'danger' | 'primary' | 'info'> = {
-    GENERATED: 'success',
-    GENERATING: 'warning',
-    FAILED: 'danger',
-    GRAPH_READY: 'primary'
-  }
-  return typeMap[status] || 'info'
-}
-
-function getWikiStatusLabel(status: string): string {
-  const labelMap: Record<string, string> = {
-    GENERATED: '已生成',
-    GENERATING: '生成中',
-    FAILED: '失败',
-    GRAPH_READY: '图谱就绪'
-  }
-  return labelMap[status] || status
-}
+// 状态徽章统一走全站映射（useStatusTag）
+const { statusType: getWikiStatusType, statusLabel: getWikiStatusLabel } = useStatusTag()
 
 function renderWikiSection(content: string): string {
   return renderMarkdown(content)
@@ -1647,6 +1619,7 @@ async function handleRegenerateWiki(id: number) {
 }
 
 async function handleDeleteWiki(id: number) {
+  if (!await confirmDelete('该 Wiki 页面')) return
   try {
     await wikiApi.delete(id)
     ElMessage.success('删除成功')
@@ -1802,72 +1775,36 @@ onMounted(() => {
   font-size: 36px;
   font-weight: 700;
   letter-spacing: 8px;
-  color: #222;
+  color: var(--ink-text, #222);
   margin-bottom: 26px;
   text-indent: 8px; /* 抵消 letter-spacing 末字符间距，保持视觉居中 */
 }
 
-/* 搜索框：直角、灰边框（对应 .s_ipt_wr，hover 加深 / focus 变蓝 #4791ff） */
+/* 搜索栏：el-input + el-button 组合，色随主题令牌（黛青），不再硬编码百度蓝 */
 .kv-searchbar {
   display: flex;
   width: 640px;
   max-width: 100%;
-  height: 36px;
-  background: #fff;
-  border: 1px solid #b6b6b6;
-  border-color: #7b7b7b #b6b6b6 #b6b6b6 #7b7b7b;
-  transition: border-color 0.15s;
-}
-
-.kv-searchbar:hover {
-  border-color: #999 #b3b3b3 #b3b3b3 #999;
-}
-
-.kv-searchbar:focus-within {
-  border-color: #4791ff #4791ff #4791ff #4791ff;
+  gap: 10px;
+  align-items: center;
 }
 
 .kv-searchbar__input {
   flex: 1;
   min-width: 0;
-  border: none;
-  outline: none;
-  padding: 0 7px;
-  font-size: 16px;
-  font-family: arial, "Microsoft YaHei", sans-serif;
-  color: #222;
-  background: transparent;
 }
 
-.kv-searchbar__input::placeholder {
-  color: #aaa;
+.kv-searchbar__input :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px var(--el-border-color) inset;
 }
 
-/* 搜索按钮：对应 .s_btn（#3385ff，hover #317ef3，按下 #3075dc 内阴影） */
 .kv-searchbar__btn {
   width: 100px;
   flex-shrink: 0;
-  border: none;
-  border-bottom: 1px solid #2d78f4;
-  background: #3385ff;
-  color: #fff;
-  font-size: 15px;
-  letter-spacing: 1px;
-  cursor: pointer;
+  letter-spacing: 2px;
 }
 
-.kv-searchbar__btn:hover {
-  background: #317ef3;
-  border-bottom-color: #2868c8;
-  box-shadow: 1px 1px 1px #ccc;
-}
-
-.kv-searchbar__btn:active {
-  background: #3075dc;
-  box-shadow: inset 1px 1px 5px #2964bb;
-}
-
-/* 搜索框下方文字链接：对应 .mnav（加粗 13px #333 下划线，hover #0000cc） */
+/* 搜索框下方文字链接：对应 .mnav（加粗 13px var(--ink-text) 下划线，hover #0000cc） */
 .kv-hero__links {
   margin-top: 16px;
   display: flex;
@@ -1877,33 +1814,11 @@ onMounted(() => {
 }
 
 .kv-hero__links-label {
-  color: #999;
+  color: var(--ink-text-secondary);
   font-size: 13px;
 }
 
-.kv-hero__link {
-  color: #333;
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.kv-hero__link:hover {
-  color: #0000cc;
-}
-
-.kv-hero__link--active {
-  color: #0000cc;
-}
-
-.kv-hero__link--clear {
-  color: #f56c6c;
-}
-
-.kv-hero__link--clear:hover {
-  color: #f23c3c;
-}
+/* 检索模式切换：el-radio-group 自带键盘可达与选中态，色随主题 */
 
 /* ===== 操作按钮栏：右对齐 ===== */
 .kv-toolbar {

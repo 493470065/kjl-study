@@ -1,11 +1,8 @@
 <template>
-  <div class="dev-env-view">
-    <div class="page-header">
-      <h2>开发环境管理</h2>
-      <div class="toolbar">
-        <el-button type="warning" @click="handleSeed">预置数据</el-button>
-      </div>
-    </div>
+  <page-container title="开发环境" no-card>
+    <template #actions>
+<el-button type="warning" @click="handleSeed">预置数据</el-button>
+    </template>
 
     <el-tabs v-model="activeTab">
       <!-- ====== Tab 1: 数据库连接 ====== -->
@@ -46,10 +43,10 @@
 
           <!-- SQL 执行结果 -->
           <template v-if="sqlResult">
-            <div style="margin-bottom: 8px; color: #909399; font-size: 13px">
+            <div style="margin-bottom: 8px; color: var(--ink-text-secondary); font-size: 13px">
               执行结果: 共 {{ sqlResult.rows?.length || 0 }} 行, 耗时 {{ sqlResult.elapsed || '-' }} ms
             </div>
-            <el-table v-if="sqlResult.columns && sqlResult.rows" :data="sqlResult.rows" stripe border style="width: 100%" max-height="400">
+            <el-table v-if="sqlResult.columns && sqlResult.rows" :data="sqlResult.rows" stripe style="width: 100%" max-height="400">
               <el-table-column
                 v-for="col in sqlResult.columns"
                 :key="col"
@@ -90,7 +87,7 @@
           <el-button type="primary" :icon="Refresh" @click="handleLoadConsulServices" :loading="consulLoading" :disabled="!registryConsulConfig?.host">拉取服务列表</el-button>
         </div>
 
-        <el-table :data="filteredConsulServices" stripe border style="width: 100%" v-loading="consulLoading" max-height="500">
+        <el-table :data="filteredConsulServices" stripe style="width: 100%" v-loading="consulLoading" max-height="500">
           <el-table-column prop="serviceName" label="服务名" min-width="200" />
           <el-table-column prop="serviceId" label="服务 ID" min-width="200" />
           <el-table-column prop="address" label="地址" width="140" />
@@ -98,12 +95,12 @@
           <el-table-column label="标签" min-width="200">
             <template #default="{ row }">
               <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" style="margin: 2px 4px 2px 0">{{ tag }}</el-tag>
-              <span v-if="!row.tags?.length" style="color: #c0c4cc">-</span>
+              <span v-if="!row.tags?.length" style="color: #b8b1a0">-</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="100" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'passing' ? 'success' : 'danger'" size="small">{{ row.status || 'unknown' }}</el-tag>
+              <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="100">
@@ -115,7 +112,7 @@
 
         <!-- 服务实例弹窗 -->
         <el-dialog v-model="instancesDialogVisible" title="服务实例" width="850px">
-          <el-table :data="serviceInstances" stripe border style="width: 100%" v-loading="instancesLoading" max-height="400">
+          <el-table :data="serviceInstances" stripe style="width: 100%" v-loading="instancesLoading" max-height="400">
             <el-table-column prop="node" label="Node" width="120" />
             <el-table-column prop="nodeAddress" label="节点地址" width="140" />
             <el-table-column prop="serviceAddress" label="服务地址" width="140" />
@@ -124,12 +121,12 @@
             <el-table-column label="标签" min-width="180">
               <template #default="{ row }">
                 <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" style="margin: 2px 4px 2px 0">{{ tag }}</el-tag>
-                <span v-if="!row.tags?.length" style="color: #c0c4cc">-</span>
+                <span v-if="!row.tags?.length" style="color: #b8b1a0">-</span>
               </template>
             </el-table-column>
             <el-table-column label="健康状态" width="100" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'passing' ? 'success' : row.status === 'warning' ? 'warning' : 'danger'" size="small">{{ row.status || '-' }}</el-tag>
+                <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
           </el-table>
@@ -173,11 +170,11 @@
 
         <!-- 常用 SQL 编辑弹窗 -->
         <el-dialog v-model="frequentSqlDialogVisible" :title="isEditFrequentSql ? '编辑常用 SQL' : '新增常用 SQL'" width="600px">
-          <el-form :model="frequentSqlForm" label-width="100px">
-            <el-form-item label="标题" required>
+          <el-form ref="sqlFormRef" :model="frequentSqlForm" :rules="sqlRules" label-width="100px">
+            <el-form-item label="标题" prop="title">
               <el-input v-model="frequentSqlForm.title" placeholder="如: 查询患者信息" />
             </el-form-item>
-            <el-form-item label="SQL 内容" required>
+            <el-form-item label="SQL 内容" prop="sqlContent">
               <el-input v-model="frequentSqlForm.sqlContent" type="textarea" :rows="6" placeholder="输入 SQL" />
             </el-form-item>
             <el-form-item label="数据库类型">
@@ -204,14 +201,12 @@
 
         <!-- 环境卡片列表 -->
         <div v-loading="envLoading">
-          <div v-if="envCards.length === 0" style="padding: 40px; text-align: center; color: #999;">
-            暂无环境配置
-          </div>
+          <el-empty v-if="envCards.length === 0" description="暂无环境配置" :image-size="60" />
           <div
             v-for="(card, idx) in envCards"
             :key="card.id"
             class="env-card"
-            style="background: #fff; border-radius: 8px; margin-bottom: 12px; overflow: hidden; border: 1px solid #f0f0f0;"
+            style="background: var(--paper-card); border-radius: 12px; margin-bottom: 12px; overflow: hidden; border: 1px solid var(--paper-border);"
           >
             <!-- 卡片头 -->
             <div
@@ -220,7 +215,7 @@
               @click="toggleEnvDetail(idx)"
             >
               <div style="display: flex; align-items: center; gap: 12px;">
-                <span style="font-size: 18px; font-weight: 600; color: #262626;">{{ card.envName }}</span>
+                <span style="font-size: 18px; font-weight: 600; color: var(--ink-text);">{{ card.envName }}</span>
                 <span
                   :style="{
                     padding: '2px 8px', borderRadius: '4px', fontSize: '12px',
@@ -236,15 +231,15 @@
                     border: '1px solid ' + card.dbTypeColor + '40'
                   }"
                 >{{ card.dbTypeLabel }}</span>
-                <span v-if="card.branch" style="font-size: 13px; color: #595959; background: #f5f5f5; padding: 2px 8px; border-radius: 4px;">
+                <span v-if="card.branch" style="font-size: 13px; color: var(--ink-text-regular); background: var(--el-border-color-extra-light); padding: 2px 8px; border-radius: 4px;">
                   {{ card.branch }}
                 </span>
               </div>
               <div style="display: flex; align-items: center; gap: 16px;">
-                <span v-if="card.ip" style="font-size: 13px; color: #595959;">{{ card.ip }}</span>
+                <span v-if="card.ip" style="font-size: 13px; color: var(--ink-text-regular);">{{ card.ip }}</span>
                 <span
                   :style="{
-                    fontSize: '16px', color: '#8c8c8c', transition: 'transform 0.2s',
+                    fontSize: '16px', color: 'var(--ink-text-secondary)', transition: 'transform 0.2s',
                     transform: expandedEnvCards.has(idx) ? 'rotate(180deg)' : 'rotate(0deg)'
                   }"
                 >&#9660;</span>
@@ -253,38 +248,38 @@
             <!-- 展开详情 -->
             <div
               v-if="expandedEnvCards.has(idx)"
-              style="padding: 0 16px 16px; border-top: 1px solid #f0f0f0;"
+              style="padding: 0 16px 16px; border-top: 1px solid #ede8da;"
             >
               <div style="padding-top: 16px;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                   <!-- 配置ID (SerialIds) -->
                   <div>
-                    <h3 style="font-size: 14px; margin-bottom: 12px; color: #333;">配置ID (SerialIds)</h3>
+                    <h3 style="font-size: 14px; margin-bottom: 12px; color: var(--ink-text);">配置ID (SerialIds)</h3>
                     <template v-if="getSerialIdEntries(card.config).length > 0">
                       <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
                         <thead>
-                          <tr style="background: #fafafa;">
-                            <th style="padding: 8px 12px; border-bottom: 2px solid #e8e8e8; text-align: left; font-weight: 600;">产品线</th>
-                            <th style="padding: 8px 12px; border-bottom: 2px solid #e8e8e8; text-align: left; font-weight: 600;">SerialId</th>
-                            <th style="padding: 8px 12px; border-bottom: 2px solid #e8e8e8; text-align: left; font-weight: 600;">配置中心</th>
-                            <th style="padding: 8px 12px; border-bottom: 2px solid #e8e8e8; text-align: left; font-weight: 600;">业务库</th>
+                          <tr style="background: var(--el-fill-color-light);">
+                            <th style="padding: 8px 12px; border-bottom: 2px solid #e1dbcb; text-align: left; font-weight: 600;">产品线</th>
+                            <th style="padding: 8px 12px; border-bottom: 2px solid #e1dbcb; text-align: left; font-weight: 600;">SerialId</th>
+                            <th style="padding: 8px 12px; border-bottom: 2px solid #e1dbcb; text-align: left; font-weight: 600;">配置中心</th>
+                            <th style="padding: 8px 12px; border-bottom: 2px solid #e1dbcb; text-align: left; font-weight: 600;">业务库</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr v-for="entry in getSerialIdEntries(card.config)" :key="entry.key">
-                            <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">{{ entry.label }}</td>
-                            <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-family: monospace;">{{ entry.serialId }}</td>
-                            <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da;">{{ entry.label }}</td>
+                            <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da; font-family: var(--app-font-mono);">{{ entry.serialId }}</td>
+                            <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da;">
                               <a
                                 v-if="entry.configUrl !== '#'"
                                 :href="entry.configUrl"
                                 target="_blank"
-                                style="color: #1890ff; text-decoration: none; font-size: 12px;"
+                                style="color: var(--el-color-primary); text-decoration: none; font-size: 12px;"
                                 @click.stop
                               >打开配置</a>
-                              <span v-else style="color: #c0c4cc; font-size: 12px;">-</span>
+                              <span v-else style="color: #b8b1a0; font-size: 12px;">-</span>
                             </td>
-                            <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da;">
                               <el-input
                                 size="small"
                                 :model-value="getCardBizDb(card.config, entry.key)"
@@ -300,33 +295,33 @@
                     </template>
                     <table v-else style="width: 100%; font-size: 13px; border-collapse: collapse;">
                       <tbody>
-                        <tr style="background: #fafafa;">
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-weight: 600; width: 100px;">环境名</td>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">{{ card.envName }}</td>
+                        <tr style="background: var(--el-fill-color-light);">
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #e1dbcb; font-weight: 600; width: 100px;">环境名</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da;">{{ card.envName }}</td>
                         </tr>
                         <tr>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-weight: 600;">类别</td>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">{{ card.categoryLabel }}</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #e1dbcb; font-weight: 600;">类别</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da;">{{ card.categoryLabel }}</td>
                         </tr>
-                        <tr style="background: #fafafa;">
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-weight: 600;">产品线</td>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">{{ card.branch || '-' }}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-weight: 600;">数据库</td>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">{{ card.dbTypeLabel || '-' }}</td>
-                        </tr>
-                        <tr style="background: #fafafa;">
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-weight: 600;">DB URL</td>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; word-break: break-all;">{{ card.dbUrl || '-' }}</td>
+                        <tr style="background: var(--el-fill-color-light);">
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #e1dbcb; font-weight: 600;">产品线</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da;">{{ card.branch || '-' }}</td>
                         </tr>
                         <tr>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-weight: 600;">Web URL</td>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; word-break: break-all;">{{ card.webUrl || '-' }}</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #e1dbcb; font-weight: 600;">数据库</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da;">{{ card.dbTypeLabel || '-' }}</td>
+                        </tr>
+                        <tr style="background: var(--el-fill-color-light);">
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #e1dbcb; font-weight: 600;">DB URL</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da; word-break: break-all;">{{ card.dbUrl || '-' }}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #e1dbcb; font-weight: 600;">Web URL</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da; word-break: break-all;">{{ card.webUrl || '-' }}</td>
                         </tr>
                         <tr v-if="card.serialId">
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-weight: 600;">SerialId</td>
-                          <td style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-family: monospace;">{{ card.serialId }}</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #e1dbcb; font-weight: 600;">SerialId</td>
+                          <td style="padding: 8px 12px; border-bottom: 1px solid #ede8da; font-family: var(--app-font-mono);">{{ card.serialId }}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -334,14 +329,14 @@
                       <a
                         :href="buildDevopsUrl(card)"
                         target="_blank"
-                        style="color: #1890ff; text-decoration: none; font-size: 12px;"
+                        style="color: var(--el-color-primary); text-decoration: none; font-size: 12px;"
                         @click.stop
                       >打开配置中心</a>
                     </div>
                   </div>
                   <!-- 配置中心地址 (DevopsBaseUrl) -->
                   <div>
-                    <h3 style="font-size: 14px; margin-bottom: 12px; color: #333;">配置中心地址 (DevopsBaseUrl)</h3>
+                    <h3 style="font-size: 14px; margin-bottom: 12px; color: var(--ink-text);">配置中心地址 (DevopsBaseUrl)</h3>
                     <div style="font-size: 13px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; word-break: break-all; line-height: 1.8;">
                       <template v-if="getDevopsBaseUrlEntries(card.config).length > 0">
                         <div v-for="entry in getDevopsBaseUrlEntries(card.config)" :key="entry.label">
@@ -352,11 +347,11 @@
                         <div><strong>URL:</strong> {{ getDevopsBaseUrlString(card.config) }}</div>
                       </template>
                       <template v-else>
-                        <div style="color: #c0c4cc;">未配置</div>
+                        <div style="color: #b8b1a0;">未配置</div>
                       </template>
                     </div>
                     <!-- Consul 配置 -->
-                    <h3 style="font-size: 14px; margin: 12px 0 8px; color: #333;">Consul 配置</h3>
+                    <h3 style="font-size: 14px; margin: 12px 0 8px; color: var(--ink-text);">Consul 配置</h3>
                     <div style="font-size: 13px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; word-break: break-all; line-height: 1.6;">
                       <div><strong>Host:</strong> {{ card.consulHost || '-' }}</div>
                       <div><strong>Port:</strong> {{ card.consulPort || '-' }}</div>
@@ -449,13 +444,18 @@
         </el-dialog>
       </el-tab-pane>
     </el-tabs>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+import { useStatusTag } from '@/composables/useStatusTag'
+
+const { confirmDelete } = useConfirmDelete()
+const { statusType, statusLabel } = useStatusTag()
 import { Plus, Refresh, View, Hide, CaretRight } from '@element-plus/icons-vue'
 import {
   listEnvConfigs,
@@ -801,6 +801,12 @@ const frequentSqlDialogVisible = ref(false)
 const isEditFrequentSql = ref(false)
 const frequentSqlSaving = ref(false)
 
+const sqlFormRef = ref<FormInstance>()
+const sqlRules: FormRules = {
+  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
+  sqlContent: [{ required: true, message: '请输入 SQL 内容', trigger: 'blur' }]
+}
+
 const frequentSqlForm = reactive<FrequentSql>({
   title: '',
   sqlContent: '',
@@ -833,10 +839,8 @@ function handleEditFrequentSql(row: FrequentSql) {
 }
 
 async function handleSaveFrequentSql() {
-  if (!frequentSqlForm.title || !frequentSqlForm.sqlContent) {
-    ElMessage.warning('标题和 SQL 内容不能为空')
-    return
-  }
+  const valid = await sqlFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   frequentSqlSaving.value = true
   try {
     await saveFrequentSql({ ...frequentSqlForm })
@@ -851,15 +855,13 @@ async function handleSaveFrequentSql() {
 }
 
 async function handleDeleteFrequentSql(row: FrequentSql) {
+  if (!await confirmDelete(`常用 SQL "${row.title}"`)) return
   try {
-    await ElMessageBox.confirm(`确定删除常用 SQL "${row.title}" ?`, '确认删除', { type: 'warning' })
     await deleteFrequentSql(row.id!)
     ElMessage.success('已删除')
     await loadFrequentSqls()
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error('删除失败')
-    }
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -902,25 +904,25 @@ const envCards = computed<EnvCard[]>(() => {
   return envConfigs.value.map(c => {
     // 从 category 字段映射标签和颜色
     let categoryLabel = '开发环境'
-    let categoryColor = '#52c41a'
+    let categoryColor = '#67c23a'
     if (c.category === 'test') {
-      categoryLabel = '测试环境'; categoryColor = '#1677ff'
+      categoryLabel = '测试环境'; categoryColor = 'var(--el-color-primary)'
     } else if (c.category === 'public') {
-      categoryLabel = '公共'; categoryColor = '#faad14'
+      categoryLabel = '公共'; categoryColor = '#e6a23c'
     }
 
     // 从 dbDriver 推断数据库类型
     const driver = c.dbDriver || ''
     let dbTypeLabel = ''
-    let dbTypeColor = '#8c8c8c'
+    let dbTypeColor = 'var(--ink-text-secondary)'
     if (driver.includes('oracle') || driver.includes('Oracle')) {
-      dbTypeLabel = 'ORACLE'; dbTypeColor = '#fa8c16'
+      dbTypeLabel = 'ORACLE'; dbTypeColor = '#e6a23c'
     } else if (driver.includes('sqlserver') || driver.includes('SQLServer')) {
-      dbTypeLabel = 'SQLSERVER'; dbTypeColor = '#722ed1'
+      dbTypeLabel = 'SQLSERVER'; dbTypeColor = 'var(--viz-violet)'
     } else if (driver.includes('mysql') || driver.includes('MySQL')) {
-      dbTypeLabel = 'MYSQL'; dbTypeColor = '#1677ff'
+      dbTypeLabel = 'MYSQL'; dbTypeColor = 'var(--el-color-primary)'
     } else if (driver.includes('postgresql') || driver.includes('PostgreSQL')) {
-      dbTypeLabel = 'POSTGRESQL'; dbTypeColor = '#1677ff'
+      dbTypeLabel = 'POSTGRESQL'; dbTypeColor = 'var(--el-color-primary)'
     }
 
     // 从 dbUrl 提取 IP 显示
@@ -1134,19 +1136,13 @@ async function handleSaveEnv() {
 }
 
 async function handleDeleteEnv(card: EnvCard) {
+  if (!await confirmDelete(`环境 "${card.envName}"`)) return
   try {
-    await ElMessageBox.confirm(
-      `确定删除环境 "${card.envName}" ?`,
-      '确认删除',
-      { type: 'warning' }
-    )
     if (card.id) await deleteEnvConfig(card.id)
     ElMessage.success('已删除')
     await loadEnvConfigs()
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error('删除失败')
-    }
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -1181,27 +1177,15 @@ onMounted(async () => {
 
 <style scoped>
 .dev-env-view {
-  padding: 20px;
-}
+  }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
 
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-}
 
 .sql-section {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   padding: 16px;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 
 .sql-toolbar {

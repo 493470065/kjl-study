@@ -1,6 +1,5 @@
 <template>
-  <div class="audit-view">
-    <h2>审计日志</h2>
+  <page-container title="审计日志" no-card>
 
     <el-tabs v-model="activeTab">
       <el-tab-pane label="Token 概览" name="summary">
@@ -76,7 +75,7 @@
 
         <el-card>
           <template #header>Token 趋势（近 7 天）</template>
-          <div class="chart-placeholder" v-if="!tokenStats.length">暂无数据</div>
+          <el-empty v-if="!tokenStats.length" description="暂无数据" :image-size="60" />
           <div v-else class="token-chart">
             <div v-for="item in tokenStats" :key="item.date" class="chart-bar-wrap">
               <div class="chart-bar" :style="{ height: barHeight(item.totalTokens) + 'px' }"></div>
@@ -94,7 +93,7 @@
             <el-option v-for="u in userList" :key="u.username" :label="u.displayName + ' (' + u.username + ')'" :value="u.username" />
           </el-select>
         </div>
-        <el-table :data="toolInvocations" v-loading="loadingTools" border stripe max-height="500">
+        <el-table :data="toolInvocations" v-loading="loadingTools" stripe max-height="500">
           <el-table-column prop="createdAt" label="时间" width="180">
             <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
           </el-table-column>
@@ -119,7 +118,7 @@
             <el-option v-for="u in userList" :key="u.username" :label="u.displayName + ' (' + u.username + ')'" :value="u.username" />
           </el-select>
         </div>
-        <el-table :data="llmCalls" v-loading="loadingLlm" border stripe max-height="500">
+        <el-table :data="llmCalls" v-loading="loadingLlm" stripe max-height="500">
           <el-table-column prop="createdAt" label="时间" width="180">
             <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
           </el-table-column>
@@ -146,15 +145,15 @@
             <el-option v-for="u in userList" :key="u.username" :label="u.displayName + ' (' + u.username + ')'" :value="u.username" />
           </el-select>
         </div>
-        <el-table :data="taskExecutions" v-loading="loadingTasks" border stripe max-height="500">
+        <el-table :data="taskExecutions" v-loading="loadingTasks" stripe max-height="500">
           <el-table-column prop="createdAt" label="时间" width="180">
             <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
           </el-table-column>
           <el-table-column prop="taskType" label="类型" width="120" />
           <el-table-column prop="status" label="状态" width="100">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
-                {{ row.status }}
+              <el-tag :type="statusType(row.status)" size="small">
+                {{ statusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -164,7 +163,7 @@
         </el-table>
       </el-tab-pane>
     </el-tabs>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
@@ -172,6 +171,10 @@ import { ref, onMounted, watch } from 'vue'
 import { auditApi, type TokenSummary, type ToolInvocation, type LlmCall, type TaskExecution } from '@/api/audit'
 import { userApi, type UserInfo } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/format'
+import { useStatusTag } from '@/composables/useStatusTag'
+
+const { statusType, statusLabel } = useStatusTag()
 
 const activeTab = ref('summary')
 const summary = ref<TokenSummary | null>(null)
@@ -194,9 +197,8 @@ function formatNum(n?: number) {
   return n.toString()
 }
 
-function formatTime(s?: string) {
-  if (!s) return ''
-  return s.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : ''
 }
 
 function barHeight(tokens: number) {
@@ -255,15 +257,15 @@ onMounted(() => {
 
 <style scoped>
 .audit-view { padding: 0; }
-.stat-label { font-size: 13px; color: #909399; margin-bottom: 8px; }
-.stat-value { font-size: 28px; font-weight: bold; color: #409eff; }
-.stat-sub { font-size: 12px; color: #909399; margin-top: 4px; }
-.stat-providers { margin-top: 8px; font-size: 12px; color: #909399; }
+.stat-label { font-size: 13px; color: var(--ink-text-secondary); margin-bottom: 8px; }
+.stat-value { font-size: 28px; font-weight: bold; color: var(--el-color-primary); }
+.stat-sub { font-size: 12px; color: var(--ink-text-secondary); margin-top: 4px; }
+.stat-providers { margin-top: 8px; font-size: 12px; color: var(--ink-text-secondary); }
 .provider-line { line-height: 1.6; }
-.chart-placeholder { text-align: center; color: #909399; padding: 40px 0; }
+.chart-placeholder { text-align: center; color: var(--ink-text-secondary); padding: 40px 0; }
 .token-chart { display: flex; align-items: flex-end; gap: 12px; height: 160px; padding: 10px 0; }
 .chart-bar-wrap { display: flex; flex-direction: column; align-items: center; flex: 1; }
-.chart-bar { width: 100%; max-width: 40px; background: linear-gradient(180deg, #409eff, #79bbff); border-radius: 4px 4px 0 0; min-height: 4px; }
-.chart-label { font-size: 11px; color: #909399; margin-top: 4px; }
-.chart-count { font-size: 11px; color: #606266; }
+.chart-bar { width: 100%; max-width: 40px; background: linear-gradient(180deg, var(--el-color-primary), #79bbff); border-radius: 4px 4px 0 0; min-height: 4px; }
+.chart-label { font-size: 11px; color: var(--ink-text-secondary); margin-top: 4px; }
+.chart-count { font-size: 11px; color: var(--ink-text-regular); }
 </style>

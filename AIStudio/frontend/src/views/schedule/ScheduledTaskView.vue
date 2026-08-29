@@ -1,11 +1,8 @@
 <template>
-  <div class="schedule-view">
-    <div class="page-header">
-      <h2>定时任务管理</h2>
-      <div class="toolbar">
-        <el-button :icon="Refresh" @click="loadData">刷新</el-button>
-      </div>
-    </div>
+  <page-container title="定时任务" no-card>
+    <template #actions>
+<el-button :icon="Refresh" @click="loadData">刷新</el-button>
+    </template>
 
     <el-tabs v-model="activeTab">
       <el-tab-pane label="任务列表" name="tasks">
@@ -68,7 +65,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="执行记录" name="logs">
-        <el-table :data="logs" stripe style="width: 100%" v-loading="logsLoading" :default-sort="{ prop: 'startTime', order: 'descending' }">
+        <el-table :data="pagedLogs" stripe style="width: 100%" v-loading="logsLoading" :default-sort="{ prop: 'startTime', order: 'descending' }">
           <el-table-column prop="taskName" label="任务名称" width="150" />
           <el-table-column label="开始时间" width="180">
             <template #default="{ row }">{{ formatTime(row.startTime) }}</template>
@@ -93,6 +90,17 @@
             </template>
           </el-table-column>
         </el-table>
+        <div style="display: flex; justify-content: center; margin-top: 16px;">
+          <el-pagination
+            v-if="logs.length > 0"
+            v-model:current-page="logPage"
+            v-model:page-size="logPageSize"
+            :total="logs.length"
+            :page-sizes="[20, 50, 100]"
+            background
+            layout="total, sizes, prev, pager, next, jumper"
+          />
+        </div>
       </el-tab-pane>
     </el-tabs>
 
@@ -112,23 +120,32 @@
         <el-button type="primary" @click="handleSaveCron" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
+import { useStatusTag } from '@/composables/useStatusTag'
 import {
   listTasks, updateTask, triggerTask, listLogs, getCacheStatus,
   type ScheduledTask, type TaskLog, type CacheStatus
 } from '@/api/scheduledTasks'
+import { formatDateTime } from '@/utils/format'
 
 const activeTab = ref('tasks')
 const loading = ref(false)
 const logsLoading = ref(false)
 const tasks = ref<ScheduledTask[]>([])
 const logs = ref<TaskLog[]>([])
+// 执行记录为全量加载，前端切片分页（规范 §3.1）
+const logPage = ref(1)
+const logPageSize = ref(20)
+const pagedLogs = computed(() => {
+  const start = (logPage.value - 1) * logPageSize.value
+  return logs.value.slice(start, start + logPageSize.value)
+})
 const cacheStatus = ref<CacheStatus>({})
 const triggeringId = ref<number | null>(null)
 
@@ -198,24 +215,12 @@ async function handleSaveCron() {
   finally { saving.value = false }
 }
 
-function formatTime(t: string): string {
-  if (!t) return '-'
-  return t.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : ''
 }
 
-function statusType(s: string): string {
-  if (s === 'SUCCESS') return 'success'
-  if (s === 'FAILED') return 'danger'
-  if (s === 'RUNNING') return 'warning'
-  return 'info'
-}
-
-function statusLabel(s: string): string {
-  if (s === 'SUCCESS') return '成功'
-  if (s === 'FAILED') return '失败'
-  if (s === 'RUNNING') return '运行中'
-  return s
-}
+// 状态徽章统一走全站映射（useStatusTag）
+const { statusType, statusLabel } = useStatusTag()
 
 function cacheLabel(key: string): string {
   const map: Record<string, string> = {
@@ -231,17 +236,16 @@ onMounted(() => { loadData() })
 </script>
 
 <style scoped>
-.schedule-view { padding: 20px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
+/* 页边距统一交给 el-main（24px） */
+.schedule-view { }
 .toolbar { display: flex; gap: 8px; }
 .cache-section { margin-top: 24px; }
-.cache-section h3 { font-size: 15px; font-weight: 600; color: #303133; margin-bottom: 12px; padding-left: 8px; border-left: 3px solid #409EFF; }
+.cache-section h3 { font-size: 16px; font-weight: 600; color: var(--ink-text); margin-bottom: 12px; padding-left: 8px; border-left: 3px solid var(--el-color-primary); }
 .cache-card { text-align: center; margin-bottom: 12px; }
 .cache-key { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
-.cache-time { font-size: 12px; color: #909399; margin-top: 6px; }
-.text-muted { color: #c0c4cc; }
+.cache-time { font-size: 12px; color: var(--ink-text-secondary); margin-top: 6px; }
+.text-muted { color: #b8b1a0; }
 .truncate-text { display: inline-block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
-.cron-hint { font-size: 12px; color: #909399; margin-top: 4px; }
-.cron-hint code { background: #f5f7fa; padding: 2px 4px; border-radius: 2px; }
+.cron-hint { font-size: 12px; color: var(--ink-text-secondary); margin-top: 4px; }
+.cron-hint code { background: var(--el-fill-color); padding: 2px 4px; border-radius: 2px; }
 </style>

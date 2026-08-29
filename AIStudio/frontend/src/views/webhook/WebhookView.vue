@@ -1,6 +1,5 @@
 <template>
-  <div class="webhook-view">
-    <h2>Webhook 通知</h2>
+  <page-container title="Webhook 通知" no-card>
 
     <el-tabs v-model="activeTab">
       <!-- Tab 1: Webhook 配置 -->
@@ -10,7 +9,7 @@
             <el-icon style="margin-right: 4px;"><Bell /></el-icon>新建
           </el-button>
         </div>
-        <el-table :data="configs" v-loading="loadingConfigs" border stripe max-height="500">
+        <el-table :data="configs" v-loading="loadingConfigs" stripe max-height="500">
           <el-table-column prop="name" label="名称" min-width="140" />
           <el-table-column prop="url" label="URL" min-width="240" show-overflow-tooltip />
           <el-table-column prop="events" label="事件" width="160">
@@ -49,7 +48,7 @@
 
       <!-- Tab 2: 发送日志 -->
       <el-tab-pane label="发送日志" name="logs">
-        <el-table :data="logs" v-loading="loadingLogs" border stripe max-height="500" @row-click="openLogDrawer">
+        <el-table :data="logs" v-loading="loadingLogs" stripe max-height="500" @row-click="openLogDrawer">
           <el-table-column prop="webhookName" label="Webhook 名称" min-width="140" />
           <el-table-column prop="eventType" label="事件类型" width="160" />
           <el-table-column prop="status" label="状态" width="100" align="center">
@@ -87,8 +86,10 @@
             v-model:current-page="logPage"
             v-model:page-size="logPageSize"
             :total="logTotal"
-            layout="total, prev, pager, next"
+            background
+            layout="total, sizes, prev, pager, next, jumper"
             @current-change="loadLogs"
+            @size-change="() => { logPage = 1; loadLogs() }"
           />
         </div>
       </el-tab-pane>
@@ -168,12 +169,16 @@
         </div>
       </template>
     </el-drawer>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useStatusTag } from '@/composables/useStatusTag'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { Bell, Check, Delete, Edit, Refresh } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -187,6 +192,7 @@ import {
   type WebhookConfig,
   type WebhookLog
 } from '@/api/webhook'
+import { formatDateTime } from '@/utils/format'
 
 const activeTab = ref('configs')
 
@@ -314,13 +320,13 @@ async function handleSave() {
 }
 
 async function handleDelete(row: WebhookConfig) {
+  if (!await confirmDelete(`Webhook "${row.name}"`, '确认删除')) return
   try {
-    await ElMessageBox.confirm(`确定删除 Webhook "${row.name}"？`, '确认', { type: 'warning' })
     await deleteWebhookConfig(row.id!)
     ElMessage.success('删除成功')
     await loadConfigs()
-  } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error('删除失败: ' + (e?.response?.data?.error || e.message))
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -354,27 +360,13 @@ const logTotal = ref(0)
 const logDrawerVisible = ref(false)
 const selectedLog = ref<WebhookLog | null>(null)
 
-function statusTagType(status: string): string {
-  switch (status) {
-    case 'SUCCESS': return 'success'
-    case 'FAILED': return 'danger'
-    case 'RETRYING': return 'warning'
-    default: return 'info'
-  }
-}
+// 状态徽章统一走全站映射（useStatusTag）
+const { statusType: tagTypeOf, statusLabel: labelOf } = useStatusTag()
+function statusTagType(status: string): string { return tagTypeOf(status) }
+function statusLabel(status: string): string { return labelOf(status) }
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case 'SUCCESS': return '成功'
-    case 'FAILED': return '失败'
-    case 'RETRYING': return '重试中'
-    default: return status
-  }
-}
-
-function formatTime(s?: string) {
-  if (!s) return ''
-  return s.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : ''
 }
 
 function formatJson(s?: string) {
@@ -428,8 +420,8 @@ onMounted(() => {
 <style scoped>
 .webhook-view { padding: 0; }
 .log-payload {
-  background: #f5f7fa;
-  border: 1px solid #e4e7ed;
+  background: var(--el-fill-color);
+  border: 1px solid var(--paper-border);
   border-radius: 4px;
   padding: 12px;
   font-size: 13px;
@@ -438,6 +430,6 @@ onMounted(() => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--app-font-mono);
 }
 </style>

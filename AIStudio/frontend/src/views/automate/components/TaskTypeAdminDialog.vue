@@ -37,11 +37,7 @@
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="openEdit(row)">编辑</el-button>
-            <el-popconfirm title="确定删除该任务类型吗？" @confirm="handleDelete(row)">
-              <template #reference>
-                <el-button type="danger" link size="small">删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -49,15 +45,15 @@
 
     <!-- 编辑视图 -->
     <div v-else>
-      <el-form :model="draft" label-width="100px" size="default">
+      <el-form ref="draftFormRef" :model="draft" :rules="draftRules" label-width="100px" size="default">
         <el-row :gutter="12">
           <el-col :span="8">
-            <el-form-item label="编码">
+            <el-form-item label="编码" prop="code">
               <el-input v-model="draft.code" :disabled="isEdit" placeholder="如 req-analysis" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="名称">
+            <el-form-item label="名称" prop="name">
               <el-input v-model="draft.name" placeholder="如 需求分析" />
             </el-form-item>
           </el-col>
@@ -102,7 +98,7 @@
               :value="p.modelName"
             />
           </el-select>
-          <div class="model-tip">在「LLM管理」页面维护 Provider；所选模型不可用时会回退全局模型</div>
+          <div class="model-tip">在「LLM 管理」页面维护 Provider；所选模型不可用时会回退全局模型</div>
         </el-form-item>
 
         <!-- 启动表单字段编辑器 -->
@@ -146,6 +142,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { taskTypeApi, type AutomateTaskType, type AutomateFormField } from '@/api/automate'
 import { skillApi, type SkillSummary } from '@/api/skill'
 import { getWorkflows } from '@/api/workflow'
@@ -173,6 +173,17 @@ const saving = ref(false)
 const editingId = ref<number | null>(null)
 const bindingMode = ref<'skill' | 'workflow'>('skill')
 const draft = ref<any>({ code: '', name: '', icon: '', description: '', sortOrder: 0, skillName: '', workflowDefinitionId: null })
+const draftFormRef = ref<FormInstance>()
+const draftRules: FormRules = {
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  code: [{
+    validator: (_rule: any, value: any, callback: any) => {
+      if (!isEdit.value && !(value || '').trim()) callback(new Error('请输入编码'))
+      else callback()
+    },
+    trigger: 'blur'
+  }]
+}
 const draftFields = ref<FieldDraft[]>([])
 
 function emptyField(): FieldDraft {
@@ -267,14 +278,8 @@ function buildPayload() {
 }
 
 async function handleSave() {
-  if (!draft.value.name || !draft.value.name.trim()) {
-    ElMessage.warning('请输入名称')
-    return
-  }
-  if (!isEdit.value && !draft.value.code?.trim()) {
-    ElMessage.warning('请输入编码')
-    return
-  }
+  const valid = await draftFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     const payload = buildPayload()
@@ -306,13 +311,14 @@ async function toggleEnabled(row: AutomateTaskType, v: boolean) {
 }
 
 async function handleDelete(row: AutomateTaskType) {
+  if (!await confirmDelete(`任务类型 "${row.name}"`)) return
   try {
     await taskTypeApi.remove(row.id)
     ElMessage.success('已删除')
     await loadAll()
     emit('changed')
-  } catch (e: any) {
-    ElMessage.error('删除失败: ' + (e?.response?.data?.error || e.message))
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 </script>
@@ -326,17 +332,17 @@ async function handleDelete(row: AutomateTaskType) {
 }
 
 .admin-tip {
-  color: #909399;
+  color: var(--ink-text-secondary);
   font-size: 12px;
 }
 
 .admin-empty {
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .field-editor {
   width: 100%;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   padding: 10px;
 }
@@ -350,13 +356,13 @@ async function handleDelete(row: AutomateTaskType) {
 }
 
 .field-tip {
-  color: #909399;
+  color: var(--ink-text-secondary);
   font-size: 12px;
   margin-top: 8px;
 }
 
 .model-tip {
-  color: #909399;
+  color: var(--ink-text-secondary);
   font-size: 12px;
   line-height: 1.5;
   margin-top: 4px;

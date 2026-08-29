@@ -20,19 +20,19 @@ let chartInstance: echarts.ECharts | null = null
 
 // Type color mapping
 const typeColorMap: Record<string, string> = {
-  CONCEPT: '#409EFF',
+  CONCEPT: 'var(--el-color-primary)',
   RULE: '#67C23A',
   MODULE: '#E6A23C',
-  INTERFACE: '#909399',
+  INTERFACE: 'var(--ink-text-secondary)',
   CLASS: '#F56C6C',
-  METHOD: '#9B59B6',
-  FIELD: '#1ABC9C',
-  DOCUMENT: '#34495E',
-  WIKI_PAGE: '#2ECC71'
+  METHOD: 'var(--viz-purple)',
+  FIELD: 'var(--viz-teal)',
+  DOCUMENT: 'var(--viz-slate)',
+  WIKI_PAGE: 'var(--viz-green)'
 }
 
 function getNodeColor(type: string): string {
-  return typeColorMap[type] || '#909399'
+  return typeColorMap[type] || 'var(--ink-text-secondary)'
 }
 
 const chartOption = computed(() => {
@@ -47,7 +47,7 @@ const chartOption = computed(() => {
     label: {
       show: true,
       fontSize: 11,
-      color: '#303133'
+      color: 'var(--ink-text)'
     },
     // Store original entity data for click events
     value: node
@@ -60,10 +60,10 @@ const chartOption = computed(() => {
       show: true,
       formatter: edge.relType || edge.type,
       fontSize: 10,
-      color: '#909399'
+      color: 'var(--ink-text-secondary)'
     },
     lineStyle: {
-      color: '#C0C4CC',
+      color: '#b8b1a0',
       curveness: 0.2
     }
   }))
@@ -84,11 +84,11 @@ const chartOption = computed(() => {
           return `
             <div style="padding: 4px 0">
               <div style="font-weight: 600; margin-bottom: 4px">${entity.name}</div>
-              <div style="color: #909399; font-size: 12px; margin-bottom: 4px">
+              <div style="color: var(--ink-text-secondary); font-size: 12px; margin-bottom: 4px">
                 <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${getNodeColor(entity.type)};margin-right:4px"></span>
                 ${entity.type}
               </div>
-              <div style="max-width: 280px; font-size: 13px; color: #606266; line-height: 1.5">${entity.description || '暂无描述'}</div>
+              <div style="max-width: 280px; font-size: 13px; color: var(--ink-text-regular); line-height: 1.5">${entity.description || '暂无描述'}</div>
             </div>
           `
         }

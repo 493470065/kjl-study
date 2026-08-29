@@ -1,8 +1,5 @@
 <template>
-  <div class="user-management">
-    <div class="page-header">
-      <h2>账户管理</h2>
-    </div>
+  <page-container title="账户管理" no-card>
 
     <el-tabs v-model="activeTab">
       <el-tab-pane label="用户管理" name="users">
@@ -10,13 +7,14 @@
           <el-button type="primary" @click="openCreate">新增用户</el-button>
         </div>
 
-        <el-table :data="users" v-loading="loading" border stripe>
+        <el-table :data="users" v-loading="loading" stripe>
           <el-table-column prop="empNo" label="工号" width="100" />
           <el-table-column prop="username" label="域账户" width="140" />
           <el-table-column prop="displayName" label="姓名" width="120" />
           <el-table-column prop="role" label="角色" width="120">
             <template #default="{ row }">
-              <el-tag :type="row.role === 'ADMIN' ? 'danger' : 'info'" size="small">
+              <!-- danger 仅留给失败/危险：管理员角色用主题色标识 -->
+              <el-tag :type="row.role === 'ADMIN' ? 'primary' : 'info'" size="small">
                 {{ row.role === 'ADMIN' ? '管理员' : '普通用户' }}
               </el-tag>
             </template>
@@ -32,9 +30,9 @@
             <template #default="{ row }">
               <template v-if="row.llmProvider">
                 <div style="font-size: 13px;">{{ row.llmProvider }}</div>
-                <div style="font-size: 11px; color: #909399;" v-if="row.llmModel">{{ row.llmModel }}</div>
+                <div style="font-size: 11px; color: var(--ink-text-secondary);" v-if="row.llmModel">{{ row.llmModel }}</div>
               </template>
-              <span v-else style="color: #c0c4cc;">未配置</span>
+              <span v-else style="color: #b8b1a0;">未配置</span>
             </template>
           </el-table-column>
           <el-table-column prop="createdAt" label="创建时间" width="180">
@@ -44,10 +42,10 @@
           </el-table-column>
           <el-table-column label="操作" min-width="320">
             <template #default="{ row }">
-              <el-button size="small" @click="openEdit(row)">编辑</el-button>
-              <el-button size="small" @click="handleResetPassword(row)">重置密码</el-button>
-              <el-button v-if="row.llmProvider" size="small" type="info" @click="showLlmConfig(row)">LLM</el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)"
+              <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="primary" size="small" @click="handleResetPassword(row)">重置密码</el-button>
+              <el-button v-if="row.llmProvider" link type="info" size="small" @click="showLlmConfig(row)">LLM</el-button>
+              <el-button link type="danger" size="small" @click="handleDelete(row)"
                          :disabled="row.username === 'admin'">删除</el-button>
             </template>
           </el-table-column>
@@ -69,7 +67,7 @@
               </el-alert>
               <el-checkbox-group v-model="adminMenus" disabled>
                 <template v-for="item in groupedMenuOptions" :key="'admin-' + item.path">
-                  <div v-if="item.isGroupHeader" style="font-weight: bold; margin: 12px 0 4px; color: #303133; font-size: 13px; border-bottom: 1px solid #ebeef5; padding-bottom: 4px;">
+                  <div v-if="item.isGroupHeader" style="font-weight: bold; margin: 12px 0 4px; color: var(--ink-text); font-size: 13px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 4px;">
                     {{ item.label }}
                   </div>
                   <div v-else class="menu-checkbox">
@@ -94,7 +92,7 @@
               </div>
               <el-checkbox-group v-model="userMenus">
                 <template v-for="item in groupedMenuOptions" :key="'user-' + item.path">
-                  <div v-if="item.isGroupHeader" style="font-weight: bold; margin: 12px 0 4px; color: #303133; font-size: 13px; border-bottom: 1px solid #ebeef5; padding-bottom: 4px;">
+                  <div v-if="item.isGroupHeader" style="font-weight: bold; margin: 12px 0 4px; color: var(--ink-text); font-size: 13px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 4px;">
                     {{ item.label }}
                   </div>
                   <div v-else class="menu-checkbox">
@@ -151,7 +149,7 @@
         <el-descriptions-item label="Provider">{{ llmConfig.providerName }}</el-descriptions-item>
         <el-descriptions-item label="模型">{{ llmConfig.modelName }}</el-descriptions-item>
         <el-descriptions-item label="API Key">
-          <span style="font-family: monospace; word-break: break-all;">{{ llmConfig.apiKey }}</span>
+          <span style="font-family: var(--app-font-mono); word-break: break-all;">{{ llmConfig.apiKey }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="llmConfig.enabled ? 'success' : 'warning'" size="small">
@@ -163,15 +161,19 @@
         <el-button @click="llmDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { userApi, type UserInfo } from '@/api/user'
 import { getRolePermissions, updateRolePermission } from '@/api/rolePermission'
 import http from '@/api/http'
+import { formatDateTime } from '@/utils/format'
 
 const activeTab = ref('users')
 
@@ -252,9 +254,8 @@ const rules: FormRules = {
   }]
 }
 
-function formatTime(s: string) {
-  if (!s) return ''
-  return s.replace('T', ' ').substring(0, 19)
+function formatTime(s?: string): string {
+  return s ? formatDateTime(s) : ''
 }
 
 async function loadUsers() {
@@ -338,12 +339,14 @@ async function handleResetPassword(row: UserInfo) {
 }
 
 async function handleDelete(row: UserInfo) {
+  if (!await confirmDelete(`用户 "${row.username}"`, '确认删除')) return
   try {
-    await ElMessageBox.confirm(`确定要删除用户 "${row.username}" 吗？`, '确认删除', { type: 'warning' })
     await userApi.deleteUser(row.id)
     ElMessage.success('已删除')
     loadUsers()
-  } catch {}
+  } catch {
+    // 接口错误已由统一错误出口提示
+  }
 }
 
 // === LLM 配置查看 ===
@@ -404,17 +407,6 @@ onMounted(() => {
 .user-management {
   padding: 0;
 }
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-.page-header h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
-}
 .tab-toolbar {
   margin-bottom: 16px;
 }
@@ -425,7 +417,7 @@ onMounted(() => {
 }
 .role-desc {
   font-size: 15px;
-  color: #606266;
+  color: var(--ink-text-regular);
 }
 .checkbox-toolbar {
   margin-bottom: 12px;
@@ -437,6 +429,6 @@ onMounted(() => {
   margin-top: 20px;
   text-align: right;
   padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #ede8da;
 }
 </style>

@@ -8,6 +8,11 @@
         <el-button size="small" type="primary" style="width: 100%" @click="createDialogVisible = true">
           新建工作流
         </el-button>
+        <!-- 编排 → 触发器出口：工作流可绑定定时任务自动运行 -->
+        <el-button size="small" text style="width: 100%; margin-top: 6px; margin-left: 0"
+                   @click="router.push('/scheduled-tasks')">
+          定时任务 →
+        </el-button>
       </div>
       <div class="workflow-list" v-loading="loadingWorkflows">
         <div
@@ -74,10 +79,10 @@
         <el-divider direction="vertical" />
 
         <el-tooltip content="撤销 (Ctrl+Z)" placement="bottom">
-          <el-button size="small" :icon="RefreshLeft" :disabled="!canUndo" @click="undo" />
+          <el-button size="small" :icon="RefreshLeft" aria-label="撤销" :disabled="!canUndo" @click="undo" />
         </el-tooltip>
         <el-tooltip content="重做 (Ctrl+Shift+Z / Ctrl+Y)" placement="bottom">
-          <el-button size="small" :icon="RefreshRight" :disabled="!canRedo" @click="redo" />
+          <el-button size="small" :icon="RefreshRight" aria-label="重做" :disabled="!canRedo" @click="redo" />
         </el-tooltip>
 
         <el-divider direction="vertical" />
@@ -353,23 +358,23 @@
       class="ctx-menu"
       :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
     >
-      <div class="ctx-menu__item" @click="handleContextAction('edit')">
+      <div class="ctx-menu__item" role="menuitem" tabindex="0" @click="handleContextAction('edit')" @keydown.enter.prevent="handleContextAction('edit')">
         <el-icon><Edit /></el-icon> 编辑
       </div>
       <div class="ctx-menu__divider" />
-      <div class="ctx-menu__item ctx-menu__item--danger" @click="handleContextAction('delete')">
+      <div class="ctx-menu__item ctx-menu__item--danger" role="menuitem" tabindex="0" @click="handleContextAction('delete')" @keydown.enter.prevent="handleContextAction('delete')">
         <el-icon><Delete /></el-icon> 删除
       </div>
       <div class="ctx-menu__divider" />
-      <div class="ctx-menu__item" @click="handleContextAction('execute')">
+      <div class="ctx-menu__item" role="menuitem" tabindex="0" @click="handleContextAction('execute')" @keydown.enter.prevent="handleContextAction('execute')">
         <el-icon><VideoPlay /></el-icon> 执行
       </div>
     </div>
 
     <!-- Create Workflow Dialog -->
     <el-dialog v-model="createDialogVisible" title="新建工作流" width="440px">
-      <el-form label-width="80px" @submit.prevent="submitCreate">
-        <el-form-item label="名称">
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="80px" @submit.prevent="submitCreate">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="createForm.name" placeholder="工作流名称" />
         </el-form-item>
         <el-form-item label="描述">
@@ -400,13 +405,13 @@
 
     <!-- Execute Dialog -->
     <el-dialog v-model="executeDialogVisible" title="执行工作流" width="500px">
-      <p style="margin-bottom: 12px; color: #606266; font-size: 14px;">输入初始上下文（JSON 格式）：</p>
+      <p style="margin-bottom: 12px; color: var(--ink-text-regular); font-size: 14px;">输入初始上下文（JSON 格式）：</p>
       <el-input
         v-model="executeContext"
         type="textarea"
         :rows="8"
         placeholder='{"key": "value"}'
-        style="font-family: Consolas, Monaco, monospace;"
+        style="font-family: var(--app-font-mono);"
       />
       <template #footer>
         <el-button @click="executeDialogVisible = false">取消</el-button>
@@ -516,11 +521,11 @@
               <div style="padding: 8px 16px;">
                 <div v-if="row.context" style="margin-bottom: 8px;">
                   <strong>上下文:</strong>
-                  <pre style="background: #f5f7fa; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">{{ typeof row.context === 'string' ? row.context : JSON.stringify(row.context, null, 2) }}</pre>
+                  <pre style="background: var(--el-fill-color); padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">{{ typeof row.context === 'string' ? row.context : JSON.stringify(row.context, null, 2) }}</pre>
                 </div>
                 <div v-if="row.result">
                   <strong>结果:</strong>
-                  <pre style="background: #f5f7fa; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">{{ typeof row.result === 'string' ? row.result : JSON.stringify(row.result, null, 2) }}</pre>
+                  <pre style="background: var(--el-fill-color); padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">{{ typeof row.result === 'string' ? row.result : JSON.stringify(row.result, null, 2) }}</pre>
                 </div>
                 <div v-if="row.error">
                   <strong style="color: #f56c6c;">错误:</strong>
@@ -533,7 +538,7 @@
           <el-table-column prop="workflowId" label="工作流 ID" width="90" />
           <el-table-column label="状态" width="90">
             <template #default="{ row }">
-              <el-tag :type="execStatusType(row.status)" size="small">{{ row.status }}</el-tag>
+              <el-tag :type="execStatusType(row.status)" size="small">{{ execStatusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="开始时间" width="160">
@@ -570,8 +575,15 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { Check, VideoPlay, ArrowDown, Edit, Delete, RefreshLeft, RefreshRight, SetUp, FullScreen } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+import { useStatusTag } from '@/composables/useStatusTag'
+
+const { confirmDelete } = useConfirmDelete()
+const router = useRouter()
 import { VueFlow, Position, Handle, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -593,6 +605,7 @@ import {
   getExecutionNodes
 } from '@/api/workflow'
 import http from '@/api/http'
+import { formatDateTime } from '@/utils/format'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type NodeType = 'START' | 'END' | 'AGENT' | 'PARALLEL' | 'CONDITION' | 'MERGE'
@@ -646,6 +659,10 @@ let executionRefreshTimer: number | null = null
 // Dialogs
 const createDialogVisible = ref(false)
 const createForm = ref({ name: '', description: '' })
+const createFormRef = ref<FormInstance>()
+const createRules: FormRules = {
+  name: [{ required: true, message: '请输入工作流名称', trigger: 'blur' }]
+}
 const editDialogVisible = ref(false)
 const editForm = ref({ name: '', description: '' })
 const executeDialogVisible = ref(false)
@@ -811,13 +828,10 @@ const latestExecMap = computed(() => {
 
 function execDotColor(status: string): string {
   const map: Record<string, string> = { SUCCESS: '#67c23a', RUNNING: '#e6a23c', FAILED: '#f56c6c' }
-  return map[status] || '#909399'
+  return map[status] || 'var(--ink-text-secondary)'
 }
 
-function execStatusLabel(status: string): string {
-  const map: Record<string, string> = { SUCCESS: '成功', RUNNING: '执行中', FAILED: '失败', PENDING: '等待', CANCELLED: '已取消' }
-  return map[status] || status
-}
+/* execStatusLabel 已由 useStatusTag 统一提供 */
 
 async function toggleEnabled(wf: WorkflowItem, val: boolean | string | number) {
   try {
@@ -1044,10 +1058,8 @@ async function handleSave() {
 
 // ── Create / Edit Workflow ─────────────────────────────────────────────────────
 async function submitCreate() {
-  if (!createForm.value.name.trim()) {
-    ElMessage.warning('请输入工作流名称')
-    return
-  }
+  const valid = await createFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     const res = await createWorkflow({
@@ -1182,8 +1194,8 @@ function formatDuration(start: string, end: string | null): string {
 }
 
 function nodeTypeColor(type: string): string {
-  const map: Record<string, string> = { START: '#67c23a', END: '#f56c6c', AGENT: '#409eff', CONDITION: '#e6a23c', MERGE: '#909399', PARALLEL: '#b88230' }
-  return map[type] || '#909399'
+  const map: Record<string, string> = { START: '#67c23a', END: '#f56c6c', AGENT: 'var(--el-color-primary)', CONDITION: '#e6a23c', MERGE: 'var(--ink-text-secondary)', PARALLEL: '#b88230' }
+  return map[type] || 'var(--ink-text-secondary)'
 }
 
 function onDetailDialogClose() {
@@ -1209,12 +1221,8 @@ async function handleContextAction(action: string) {
     editForm.value = { name: wf.name, description: wf.description }
     editDialogVisible.value = true
   } else if (action === 'delete') {
+    if (!await confirmDelete(`工作流 "${wf.name}"`, '删除工作流')) return
     try {
-      await ElMessageBox.confirm(`确定要删除工作流 "${wf.name}" 吗？`, '删除确认', {
-        type: 'warning',
-        confirmButtonText: '删除',
-        cancelButtonText: '取消'
-      })
       await deleteWorkflow(wf.id)
       ElMessage.success('已删除')
       if (currentWorkflow.value?.id === wf.id) {
@@ -1224,7 +1232,7 @@ async function handleContextAction(action: string) {
       }
       await loadWorkflows()
     } catch {
-      // cancelled or failed
+      ElMessage.error('删除失败，请稍后重试')
     }
   } else if (action === 'execute') {
     currentWorkflow.value = wf
@@ -1234,14 +1242,14 @@ async function handleContextAction(action: string) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+// 状态徽章统一走全站映射（useStatusTag）
+const { statusType: tagTypeOf, statusLabel: execStatusLabel } = useStatusTag()
 function execStatusType(status: string) {
-  const map: Record<string, string> = { SUCCESS: 'success', RUNNING: 'warning', FAILED: 'danger', PENDING: 'info', CANCELLED: 'info' }
-  return (map[status] || 'info') as any
+  return tagTypeOf(status)
 }
 
-function formatDate(dateStr?: string) {
-  if (!dateStr) return '-'
-  try { return new Date(dateStr).toLocaleString('zh-CN') } catch { return dateStr }
+function formatDate(dateStr?: string): string {
+  return dateStr ? formatDateTime(dateStr) : '-'
 }
 
 // ── Keyboard ───────────────────────────────────────────────────────────────────
@@ -1318,7 +1326,7 @@ onBeforeUnmount(() => {
   width: 250px;
   flex-shrink: 0;
   background: #fff;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--paper-border);
   border-radius: 6px 0 0 0;
   display: flex;
   flex-direction: column;
@@ -1329,8 +1337,8 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 400px;
   background: #fff;
-  border-top: 1px solid #e4e7ed;
-  border-right: 1px solid #e4e7ed;
+  border-top: 1px solid var(--paper-border);
+  border-right: 1px solid var(--paper-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1340,7 +1348,7 @@ onBeforeUnmount(() => {
   width: 300px;
   flex-shrink: 0;
   background: #fff;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--paper-border);
   border-radius: 0 6px 0 0;
   display: flex;
   flex-direction: column;
@@ -1350,7 +1358,7 @@ onBeforeUnmount(() => {
 /* ── Left Panel: Workflow List ───────────────────────────────────────────────── */
 .panel-header {
   padding: 10px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -1370,18 +1378,18 @@ onBeforeUnmount(() => {
 }
 
 .workflow-card:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .workflow-card.active {
-  background: #ecf5ff;
-  border-color: #409eff;
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
 }
 
 .workflow-card__name {
   font-weight: 600;
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1389,7 +1397,7 @@ onBeforeUnmount(() => {
 
 .workflow-card__desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1405,7 +1413,7 @@ onBeforeUnmount(() => {
 
 .workflow-card__nodes {
   font-size: 11px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   background: #f0f2f5;
   border-radius: 8px;
   padding: 1px 6px;
@@ -1422,7 +1430,7 @@ onBeforeUnmount(() => {
 
 .workflow-card__time {
   font-size: 11px;
-  color: #c0c4cc;
+  color: #b8b1a0;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1440,9 +1448,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 
 .canvas-wrapper {
@@ -1462,10 +1470,10 @@ onBeforeUnmount(() => {
 /* ── Right Panel: Properties ─────────────────────────────────────────────────── */
 .props-header {
   padding: 10px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--ink-text);
   flex-shrink: 0;
 }
 
@@ -1482,7 +1490,7 @@ onBeforeUnmount(() => {
 .props-field label {
   display: block;
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-bottom: 4px;
 }
 
@@ -1499,7 +1507,7 @@ onBeforeUnmount(() => {
   height: 250px;
   flex-shrink: 0;
   background: #fff;
-  border-top: 2px solid #e4e7ed;
+  border-top: 2px solid var(--paper-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1510,15 +1518,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 
 .bottom-panel__title {
   font-weight: 600;
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .bottom-panel__body {
@@ -1531,7 +1539,7 @@ onBeforeUnmount(() => {
   width: 100%;
   flex-shrink: 0;
   background: #fff;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--paper-border);
   padding: 4px 16px;
   text-align: left;
 }
@@ -1590,8 +1598,8 @@ onBeforeUnmount(() => {
 }
 
 .agent-rect {
-  background: linear-gradient(135deg, #409eff, #337ecc);
-  border: 2px solid #337ecc;
+  background: linear-gradient(135deg, var(--el-color-primary), var(--viz-indigo));
+  border: 2px solid var(--viz-indigo);
 }
 
 .agent-rect .node-sub {
@@ -1636,15 +1644,15 @@ onBeforeUnmount(() => {
 }
 
 .merge-diamond {
-  background: linear-gradient(135deg, #909399, #73767a);
-  border-color: #73767a;
+  background: linear-gradient(135deg, var(--ink-text-secondary), var(--viz-gray));
+  border-color: var(--viz-gray);
 }
 
 /* ── Handle Styling ──────────────────────────────────────────────────────────── */
 :deep(.vue-flow__handle) {
   width: 10px;
   height: 10px;
-  background: #409eff;
+  background: var(--el-color-primary);
   border: 2px solid #fff;
   border-radius: 50%;
 }
@@ -1654,7 +1662,7 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 9999;
   background: #fff;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--paper-border);
   border-radius: 6px;
   padding: 4px 0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -1664,7 +1672,7 @@ onBeforeUnmount(() => {
 .ctx-menu__item {
   padding: 8px 16px;
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1673,7 +1681,7 @@ onBeforeUnmount(() => {
 }
 
 .ctx-menu__item:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .ctx-menu__item--danger {
@@ -1686,7 +1694,7 @@ onBeforeUnmount(() => {
 
 .ctx-menu__divider {
   height: 1px;
-  background: #ebeef5;
+  background: var(--el-border-color-lighter);
   margin: 4px 0;
 }
 
@@ -1700,14 +1708,14 @@ onBeforeUnmount(() => {
 .workflow-list::-webkit-scrollbar-thumb,
 .props-body::-webkit-scrollbar-thumb,
 .bottom-panel__body::-webkit-scrollbar-thumb {
-  background: #dcdfe6;
+  background: var(--el-border-color);
   border-radius: 3px;
 }
 
 .workflow-list::-webkit-scrollbar-thumb:hover,
 .props-body::-webkit-scrollbar-thumb:hover,
 .bottom-panel__body::-webkit-scrollbar-thumb:hover {
-  background: #c0c4cc;
+  background: #b8b1a0;
 }
 
 /* ── Execution Detail ──────────────────────────────────────────────────────── */
@@ -1724,17 +1732,17 @@ onBeforeUnmount(() => {
 
 .exec-step__name {
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .exec-step__duration {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .exec-step__agent {
   font-size: 12px;
-  color: #606266;
+  color: var(--ink-text-regular);
   margin-bottom: 4px;
 }
 
@@ -1743,11 +1751,11 @@ onBeforeUnmount(() => {
 }
 
 .exec-step__pre {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   padding: 8px 12px;
   border-radius: 4px;
   font-size: 12px;
-  font-family: Consolas, Monaco, monospace;
+  font-family: var(--app-font-mono);
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;

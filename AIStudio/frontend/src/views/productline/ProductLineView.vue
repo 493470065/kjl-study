@@ -15,7 +15,11 @@
             v-for="pl in productLines"
             :key="pl.id"
             :class="['pl-card', { active: selectedLine?.id === pl.id }]"
+            role="button"
+            tabindex="0"
+            :aria-label="'选择产品线：' + pl.displayName"
             @click="selectProductLine(pl)"
+            @keydown.enter.prevent="selectProductLine(pl)"
           >
             <div class="pl-card__header">
               <span class="pl-card__name">{{ pl.displayName }}</span>
@@ -114,9 +118,8 @@
 
     <!-- Table view when no product line is selected -->
     <template v-else>
-      <div class="page-header">
-        <h2>产品线管理</h2>
-        <div class="toolbar">
+      <page-container title="产品线管理" no-card>
+        <template #toolbar>
           <el-input
             v-model="searchText"
             placeholder="搜索产品线名称"
@@ -125,11 +128,12 @@
             @change="loadData"
             @keyup.enter="loadData"
           />
+        </template>
+        <template #actions>
           <el-button :icon="Refresh" @click="loadData">刷新</el-button>
           <el-button @click="handleSeed">预置数据</el-button>
           <el-button type="primary" :icon="Plus" @click="handleAdd">新增</el-button>
-        </div>
-      </div>
+        </template>
 
       <el-table :data="productLines" stripe style="width: 100%" v-loading="loading">
         <el-table-column prop="displayName" label="产品线名称" min-width="150" />
@@ -158,6 +162,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </page-container>
     </template>
 
     <!-- Edit Dialog -->
@@ -167,11 +172,11 @@
       width="600px"
       @close="resetForm"
     >
-      <el-form :model="form" label-width="120px">
-        <el-form-item label="英文名" required>
+      <el-form ref="lineFormRef" :model="form" :rules="lineRules" label-width="120px">
+        <el-form-item label="英文名" prop="name">
           <el-input v-model="form.name" placeholder="如 outpatient" />
         </el-form-item>
-        <el-form-item label="产品线名称" required>
+        <el-form-item label="产品线名称" prop="displayName">
           <el-input v-model="form.displayName" placeholder="如 门诊病历" />
         </el-form-item>
         <el-form-item label="描述">
@@ -193,6 +198,10 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+
+const { confirmDelete } = useConfirmDelete()
 import { Plus, Refresh, Folder, Document } from '@element-plus/icons-vue'
 import {
   listProductLines,
@@ -237,6 +246,11 @@ function defaultForm() {
   return { name: '', displayName: '', description: '', docsPath: '' }
 }
 const form = reactive(defaultForm())
+const lineFormRef = ref<FormInstance>()
+const lineRules: FormRules = {
+  name: [{ required: true, message: '请输入英文名', trigger: 'blur' }],
+  displayName: [{ required: true, message: '请输入产品线名称', trigger: 'blur' }]
+}
 
 async function loadData() {
   loading.value = true
@@ -273,10 +287,8 @@ function resetForm() {
 }
 
 async function handleSave() {
-  if (!form.name || !form.displayName) {
-    ElMessage.warning('英文名和产品线名称为必填项')
-    return
-  }
+  const valid = await lineFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   savingLine.value = true
   try {
     const payload: Partial<ProductLine> = {
@@ -307,18 +319,16 @@ async function handleSave() {
 }
 
 async function handleDelete(row: ProductLine) {
+  if (!await confirmDelete(`产品线 "${row.displayName}"`)) return
   try {
-    await ElMessageBox.confirm(`确定删除产品线 "${row.displayName}"？`, '确认删除', { type: 'warning' })
     await deleteProductLine(row.id)
     ElMessage.success('已删除')
     if (selectedLine.value?.id === row.id) {
       selectedLine.value = null
     }
     await loadData()
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error('删除失败: ' + (e?.response?.data?.error || e.message))
-    }
+  } catch {
+    // 接口错误已由统一错误出口提示
   }
 }
 
@@ -437,7 +447,7 @@ onMounted(() => {
 .page-header h2 {
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .toolbar {
@@ -447,15 +457,15 @@ onMounted(() => {
 }
 
 .text-muted {
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 /* Three-column layout */
 .productline-view:has(.panel) {
   display: flex;
   gap: 1px;
-  background: #e4e7ed;
-  border: 1px solid #e4e7ed;
+  background: var(--paper-border);
+  border: 1px solid var(--paper-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -487,7 +497,7 @@ onMounted(() => {
 /* Left panel: product line list */
 .panel-header {
   padding: 10px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -498,7 +508,7 @@ onMounted(() => {
 
 .panel-footer {
   padding: 8px 12px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -518,12 +528,12 @@ onMounted(() => {
 }
 
 .pl-card:hover {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
 }
 
 .pl-card.active {
-  background: #ecf5ff;
-  border-color: #409eff;
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
 }
 
 .pl-card__header {
@@ -536,7 +546,7 @@ onMounted(() => {
 .pl-card__name {
   font-weight: 600;
   font-size: 13px;
-  color: #303133;
+  color: var(--ink-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -545,7 +555,7 @@ onMounted(() => {
 
 .pl-card__desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -559,7 +569,7 @@ onMounted(() => {
 /* Middle panel: file tree */
 .tree-header {
   padding: 10px 12px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
@@ -573,7 +583,7 @@ onMounted(() => {
 .tree-header__name {
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .tree-header__path {
@@ -581,7 +591,7 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
 }
 
@@ -594,7 +604,7 @@ onMounted(() => {
 
 .tree-actions {
   padding: 4px 8px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
@@ -637,15 +647,15 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
 }
 
 .editor__path {
   font-size: 13px;
-  color: #606266;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--ink-text-regular);
+  font-family: var(--app-font-mono);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -673,16 +683,16 @@ onMounted(() => {
   outline: none;
   resize: none;
   padding: 16px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--app-font-mono);
   font-size: 13px;
   line-height: 1.7;
-  color: #303133;
+  color: var(--ink-text);
   background: #fff;
   tab-size: 2;
 }
 
 .editor__textarea::placeholder {
-  color: #c0c4cc;
+  color: #b8b1a0;
 }
 
 .editor-placeholder {
@@ -700,7 +710,7 @@ onMounted(() => {
 /* Form tip */
 .form-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
 }
 
@@ -712,12 +722,12 @@ onMounted(() => {
 
 .pl-list::-webkit-scrollbar-thumb,
 .file-tree::-webkit-scrollbar-thumb {
-  background: #dcdfe6;
+  background: var(--el-border-color);
   border-radius: 3px;
 }
 
 .pl-list::-webkit-scrollbar-thumb:hover,
 .file-tree::-webkit-scrollbar-thumb:hover {
-  background: #c0c4cc;
+  background: #b8b1a0;
 }
 </style>

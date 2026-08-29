@@ -1,8 +1,5 @@
 <template>
-  <div class="ops-dashboard-view">
-    <div class="page-header">
-      <h2>运营平台看板</h2>
-    </div>
+  <page-container title="运营看板" no-card>
 
     <el-tabs v-model="activeTab">
       <!-- ====== Tab 1: 表模型查看 ====== -->
@@ -33,7 +30,7 @@
             <template v-if="tableAnalysisInfo">
               <!-- 表元数据头 -->
               <div style="background: #f0f5ff; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
-                <div style="font-size: 13px; color: #595959;">
+                <div style="font-size: 13px; color: var(--ink-text-regular);">
                   <strong>表名：</strong>{{ tableAnalysisInfo.tableName || '' }}<br>
                   <strong>类名：</strong>{{ tableAnalysisInfo.className || '' }}<br>
                   <strong>项目：</strong>{{ tableAnalysisInfo.projectName || '' }}<br>
@@ -45,7 +42,7 @@
 
               <!-- 字段列表 -->
               <h4 style="margin: 16px 0 8px">字段列表</h4>
-              <el-table :data="tableAnalysisInfo.properties || []" stripe border style="width: 100%" max-height="400">
+              <el-table :data="tableAnalysisInfo.properties || []" stripe style="width: 100%" max-height="400">
                 <el-table-column label="字段名" min-width="150">
                   <template #default="{ row }">{{ row.fieldName || row.name || '' }}</template>
                 </el-table-column>
@@ -69,7 +66,7 @@
               <!-- 索引信息 -->
               <template v-if="(tableAnalysisInfo.indexes || []).length > 0">
                 <h4 style="margin: 16px 0 8px">索引信息 ({{ tableAnalysisInfo.indexes.length }})</h4>
-                <el-table :data="tableAnalysisInfo.indexes" stripe border style="width: 100%" max-height="300">
+                <el-table :data="tableAnalysisInfo.indexes" stripe style="width: 100%" max-height="300">
                   <el-table-column prop="indexName" label="索引名" min-width="180" />
                   <el-table-column prop="columns" label="字段" min-width="150" />
                   <el-table-column label="唯一" width="70" align="center">
@@ -88,7 +85,7 @@
               <!-- 数据血缘 -->
               <template v-if="lineageRelations.length > 0">
                 <h4 style="margin: 16px 0 8px">数据血缘</h4>
-                <el-table :data="lineageRelations" stripe border style="width: 100%" max-height="300">
+                <el-table :data="lineageRelations" stripe style="width: 100%" max-height="300">
                   <el-table-column prop="sourcePropertyName" label="字段" min-width="150" />
                   <el-table-column prop="targetDbName" label="目标表" min-width="150" />
                   <el-table-column prop="targetPropertyName" label="目标字段" min-width="150" />
@@ -132,10 +129,10 @@
             <!-- DDL 补丁结果 -->
             <template v-if="patchType === 'ddl' && ddlPatchItems.length">
               <h4 style="margin: 16px 0 8px">DDL 补丁列表 ({{ ddlPatchItems.length }}条)</h4>
-              <el-table :data="ddlPatchItems" stripe border style="width: 100%" max-height="500">
+              <el-table :data="ddlPatchItems" stripe style="width: 100%" max-height="500">
                 <el-table-column label="需求号" width="120">
                   <template #default="{ row }">
-                    <a v-if="row.workItemId" :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + row.workItemId" target="_blank" style="color: #409eff">{{ row.workItemId }}</a>
+                    <a v-if="row.workItemId" :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + row.workItemId" target="_blank" style="color: var(--el-color-primary)">{{ row.workItemId }}</a>
                     <span v-else>-</span>
                   </template>
                 </el-table-column>
@@ -143,7 +140,7 @@
                   <template #default="{ row }">
                     <template v-if="parseCloneWorkItemIds(row.cloneWorkItemId).length">
                       <template v-for="(id, idx) in parseCloneWorkItemIds(row.cloneWorkItemId)" :key="id">
-                        <a :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + id" target="_blank" style="color: #409eff">{{ id }}</a>
+                        <a :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + id" target="_blank" style="color: var(--el-color-primary)">{{ id }}</a>
                         <span v-if="idx < parseCloneWorkItemIds(row.cloneWorkItemId).length - 1">, </span>
                       </template>
                     </template>
@@ -152,14 +149,14 @@
                 </el-table-column>
                 <el-table-column label="TFS项目" width="140">
                   <template #default="{ row }">
-                    <span v-if="row._workItemInfo?.project" style="color: #722ed1; font-size: 12px;">{{ row._workItemInfo.project }}</span>
-                    <span v-else style="color: #999;">-</span>
+                    <span v-if="row._workItemInfo?.project" style="color: var(--viz-violet); font-size: 12px;">{{ row._workItemInfo.project }}</span>
+                    <span v-else style="color: var(--ink-text-secondary);">-</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="TFS迭代" width="140">
                   <template #default="{ row }">
-                    <span v-if="row._workItemInfo?.iteration" style="color: #eb2f96; font-size: 12px;">{{ row._workItemInfo.iteration }}</span>
-                    <span v-else style="color: #999;">-</span>
+                    <span v-if="row._workItemInfo?.iteration" style="color: var(--viz-magenta); font-size: 12px;">{{ row._workItemInfo.iteration }}</span>
+                    <span v-else style="color: var(--ink-text-secondary);">-</span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="tableName" label="表名" min-width="150" />
@@ -179,10 +176,10 @@
             <!-- DML 补丁结果 -->
             <template v-if="patchType === 'dml' && dmlPatchItems.length">
               <h4 style="margin: 16px 0 8px">DML 补丁列表 ({{ dmlPatchItems.length }}条)</h4>
-              <el-table :data="dmlPatchItems" stripe border style="width: 100%" max-height="500">
+              <el-table :data="dmlPatchItems" stripe style="width: 100%" max-height="500">
                 <el-table-column label="需求号" width="120">
                   <template #default="{ row }">
-                    <a v-if="row.workItemId" :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + row.workItemId" target="_blank" style="color: #409eff">{{ row.workItemId }}</a>
+                    <a v-if="row.workItemId" :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + row.workItemId" target="_blank" style="color: var(--el-color-primary)">{{ row.workItemId }}</a>
                     <span v-else>-</span>
                   </template>
                 </el-table-column>
@@ -190,7 +187,7 @@
                   <template #default="{ row }">
                     <template v-if="parseCloneWorkItemIds(row.cloneWorkItemId).length">
                       <template v-for="(id, idx) in parseCloneWorkItemIds(row.cloneWorkItemId)" :key="id">
-                        <a :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + id" target="_blank" style="color: #409eff">{{ id }}</a>
+                        <a :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + id" target="_blank" style="color: var(--el-color-primary)">{{ id }}</a>
                         <span v-if="idx < parseCloneWorkItemIds(row.cloneWorkItemId).length - 1">, </span>
                       </template>
                     </template>
@@ -242,8 +239,8 @@
             <!-- classId 查询结果 -->
             <template v-if="classIdResult">
               <div style="background: #f0f5ff; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
-                <div style="font-size: 13px; color: #595959;">
-                  <strong>classId：</strong><span style="font-family: monospace; background: #e6f7ff; padding: 4px 8px; border-radius: 3px; user-select: all;">{{ classIdResult }}</span>
+                <div style="font-size: 13px; color: var(--ink-text-regular);">
+                  <strong>classId：</strong><span style="font-family: var(--app-font-mono); background: #e6f7ff; padding: 4px 8px; border-radius: 3px; user-select: all;">{{ classIdResult }}</span>
                 </div>
               </div>
             </template>
@@ -258,7 +255,7 @@
             <!-- 查询字段 / 按字段名查询 结果 -->
             <template v-if="fieldQueryResults.length">
               <h4 style="margin: 16px 0 8px">字段查询结果</h4>
-              <el-table :data="fieldQueryResults" stripe border style="width: 100%" max-height="400">
+              <el-table :data="fieldQueryResults" stripe style="width: 100%" max-height="400">
                 <el-table-column prop="tableEnglishName" label="表英文名" min-width="150" />
                 <el-table-column prop="tableChineseName" label="表中文名" min-width="120" />
                 <el-table-column prop="fieldName" label="字段名" min-width="150" />
@@ -322,7 +319,7 @@
                 <el-table-column prop="submitBy" label="提交人" width="100" />
                 <el-table-column label="需求号" width="120">
                   <template #default="{ row }">
-                    <a v-if="row.workItemId" :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + row.workItemId" target="_blank" style="color: #409eff">{{ row.workItemId }}</a>
+                    <a v-if="row.workItemId" :href="'http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0/_workitems/edit/' + row.workItemId" target="_blank" style="color: var(--el-color-primary)">{{ row.workItemId }}</a>
                     <span v-else>{{ row.demandId || '-' }}</span>
                   </template>
                 </el-table-column>
@@ -334,15 +331,15 @@
               <template #header>
                 <span>步骤3: 差异结果 ({{ versionStep2.firstVersion }} → {{ versionStep2.secondVersion }})</span>
               </template>
-              <div style="font-size: 13px; color: #595959; margin-bottom: 12px;">
-                新增: <span style="color: #52c41a; font-weight: 500;">{{ diffAdds.length }}</span> |
-                修改: <span style="color: #faad14; font-weight: 500;">{{ diffUpdates.length }}</span> |
-                删除: <span style="color: #ff4d4f; font-weight: 500;">{{ diffDeletes.length }}</span>
+              <div style="font-size: 13px; color: var(--ink-text-regular); margin-bottom: 12px;">
+                新增: <span style="color: #67c23a; font-weight: 500;">{{ diffAdds.length }}</span> |
+                修改: <span style="color: #e6a23c; font-weight: 500;">{{ diffUpdates.length }}</span> |
+                删除: <span style="color: #f56c6c; font-weight: 500;">{{ diffDeletes.length }}</span>
               </div>
 
               <template v-if="diffAdds.length">
-                <h5 style="color: #52c41a; margin: 12px 0 8px">新增 ({{ diffAdds.length }})</h5>
-                <el-table :data="diffAdds" stripe border style="width: 100%" max-height="200" size="small">
+                <h5 style="color: #67c23a; margin: 12px 0 8px">新增 ({{ diffAdds.length }})</h5>
+                <el-table :data="diffAdds" stripe style="width: 100%" max-height="200" size="small">
                   <el-table-column label="名称" min-width="200">
                     <template #default="{ row }">{{ row.displayName || row.name || '' }}</template>
                   </el-table-column>
@@ -351,8 +348,8 @@
               </template>
 
               <template v-if="diffUpdates.length">
-                <h5 style="color: #faad14; margin: 12px 0 8px">修改 ({{ diffUpdates.length }})</h5>
-                <el-table :data="diffUpdates" stripe border style="width: 100%" max-height="200" size="small">
+                <h5 style="color: #e6a23c; margin: 12px 0 8px">修改 ({{ diffUpdates.length }})</h5>
+                <el-table :data="diffUpdates" stripe style="width: 100%" max-height="200" size="small">
                   <el-table-column label="名称" min-width="200">
                     <template #default="{ row }">{{ row.displayName || row.name || '' }}</template>
                   </el-table-column>
@@ -361,8 +358,8 @@
               </template>
 
               <template v-if="diffDeletes.length">
-                <h5 style="color: #ff4d4f; margin: 12px 0 8px">删除 ({{ diffDeletes.length }})</h5>
-                <el-table :data="diffDeletes" stripe border style="width: 100%" max-height="200" size="small">
+                <h5 style="color: #f56c6c; margin: 12px 0 8px">删除 ({{ diffDeletes.length }})</h5>
+                <el-table :data="diffDeletes" stripe style="width: 100%" max-height="200" size="small">
                   <el-table-column label="名称" min-width="200">
                     <template #default="{ row }">{{ row.displayName || row.name || '' }}</template>
                   </el-table-column>
@@ -401,12 +398,12 @@
               <h4 style="margin: 16px 0 8px">基准库列表</h4>
               <div style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));">
                 <div v-for="db in standardResults" :key="db.id"
-                  :style="{ border: selectedStandardDb?.dbId === db.id ? '2px solid #1890ff' : '1px solid #f0f0f0', padding: '12px', borderRadius: '4px', cursor: 'pointer', background: selectedStandardDb?.dbId === db.id ? '#e6f7ff' : '#fafafa' }"
+                  :style="{ border: selectedStandardDb?.dbId === db.id ? '2px solid var(--el-color-primary)' : '1px solid #ede8da', padding: '12px', borderRadius: '4px', cursor: 'pointer', background: selectedStandardDb?.dbId === db.id ? '#e6f7ff' : 'var(--el-fill-color-light)' }"
                   @click="selectStandardDb(db)">
                   <div style="font-weight: 500; margin-bottom: 4px;">{{ db.standardDatasourceName || '' }}</div>
-                  <div style="font-size: 12px; color: #8c8c8c;">ID: {{ db.id }}</div>
-                  <div style="font-size: 12px; color: #8c8c8c;">类型: {{ db.dbTreeType || '' }}</div>
-                  <div style="font-size: 12px; color: #8c8c8c;">版本: {{ db.version || '' }}</div>
+                  <div style="font-size: 12px; color: var(--ink-text-secondary);">ID: {{ db.id }}</div>
+                  <div style="font-size: 12px; color: var(--ink-text-secondary);">类型: {{ db.dbTreeType || '' }}</div>
+                  <div style="font-size: 12px; color: var(--ink-text-secondary);">版本: {{ db.version || '' }}</div>
                 </div>
               </div>
             </template>
@@ -452,9 +449,9 @@
           <div v-if="demandSummary" class="demand-summary">
             <span v-for="(stats, pl) in demandSummary" :key="pl" class="pl-stat">
               <strong>{{ pl }}</strong>:
-              <span :style="{ color: stats.validating > 0 ? '#e6a23c' : '#c0c4cc' }">验证{{ stats.validating }}</span>
-              <span :style="{ color: stats.queued > 0 ? '#f56c6c' : '#c0c4cc' }">排队{{ stats.queued }}</span>
-              <span :style="{ color: stats.closed > 0 ? '#909399' : '#c0c4cc' }">已关闭{{ stats.closed }}</span>
+              <span :style="{ color: stats.validating > 0 ? '#e6a23c' : '#b8b1a0' }">验证{{ stats.validating }}</span>
+              <span :style="{ color: stats.queued > 0 ? '#f56c6c' : '#b8b1a0' }">排队{{ stats.queued }}</span>
+              <span :style="{ color: stats.closed > 0 ? 'var(--ink-text-secondary)' : '#b8b1a0' }">已关闭{{ stats.closed }}</span>
             </span>
           </div>
 
@@ -467,13 +464,13 @@
                   <span class="pl-count">({{ (group.validating?.length || 0) + (group.queued?.length || 0) + (group.published?.length || 0) + (group.idle?.length || 0) }}仓库)</span>
                 </div>
                 <div class="pl-stats">
-                  <span :style="{ color: (group.validating?.length || 0) > 0 ? '#e6a23c' : '#c0c4cc', fontWeight: (group.validating?.length || 0) > 0 ? '600' : 'normal' }">
+                  <span :style="{ color: (group.validating?.length || 0) > 0 ? '#e6a23c' : '#b8b1a0', fontWeight: (group.validating?.length || 0) > 0 ? '600' : 'normal' }">
                     验证中: {{ group.validating?.length || 0 }}
                   </span>
-                  <span :style="{ color: (group.queued?.length || 0) > 0 ? '#f56c6c' : '#c0c4cc', fontWeight: (group.queued?.length || 0) > 0 ? '600' : 'normal' }">
+                  <span :style="{ color: (group.queued?.length || 0) > 0 ? '#f56c6c' : '#b8b1a0', fontWeight: (group.queued?.length || 0) > 0 ? '600' : 'normal' }">
                     排队: {{ group.queued?.length || 0 }}
                   </span>
-                  <span :style="{ color: (group.published?.length || 0) > 0 ? '#909399' : '#c0c4cc', fontWeight: (group.published?.length || 0) > 0 ? '600' : 'normal' }">
+                  <span :style="{ color: (group.published?.length || 0) > 0 ? 'var(--ink-text-secondary)' : '#b8b1a0', fontWeight: (group.published?.length || 0) > 0 ? '600' : 'normal' }">
                     已关闭: {{ group.published?.length || 0 }}
                   </span>
                 </div>
@@ -608,16 +605,16 @@
             <div class="stat-label">已拒绝</div>
           </el-card>
           <el-card shadow="hover" class="stat-card">
-            <div class="stat-value" style="color: #409eff">{{ prStats.total }}</div>
+            <div class="stat-value" style="color: var(--el-color-primary)">{{ prStats.total }}</div>
             <div class="stat-label">总计</div>
           </el-card>
         </div>
 
         <!-- PR 列表 -->
-        <el-table :data="filteredPrList" stripe border style="width: 100%" v-loading="prLoading" max-height="500">
+        <el-table :data="filteredPrList" stripe style="width: 100%" v-loading="prLoading" max-height="500">
           <el-table-column label="PR ID" width="100">
             <template #default="{ row }">
-              <a v-if="getPrUrl(row)" :href="getPrUrl(row)" target="_blank" style="color: #409eff">
+              <a v-if="getPrUrl(row)" :href="getPrUrl(row)" target="_blank" style="color: var(--el-color-primary)">
                 #{{ row.prId || row.pr_id || row.id }}
               </a>
               <span v-else>#{{ row.prId || row.pr_id || row.id || '-' }}</span>
@@ -634,17 +631,17 @@
           </el-table-column>
           <el-table-column label="当前步骤" width="100">
             <template #default="{ row }">
-              <span v-if="prStepText(row.currentStep || row.current_step)" style="color: #409eff; font-size: 12px">
+              <span v-if="prStepText(row.currentStep || row.current_step)" style="color: var(--el-color-primary); font-size: 12px">
                 {{ prStepText(row.currentStep || row.current_step) }}
               </span>
-              <span v-else style="color: #c0c4cc">-</span>
+              <span v-else style="color: #b8b1a0">-</span>
             </template>
           </el-table-column>
           <el-table-column prop="author" label="提交人" width="100" />
           <el-table-column prop="createTime" label="创建时间" width="160" />
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
-              <a v-if="getPrUrl(row)" :href="getPrUrl(row)" target="_blank" style="color: #409eff; font-size: 13px">详情</a>
+              <a v-if="getPrUrl(row)" :href="getPrUrl(row)" target="_blank" style="color: var(--el-color-primary); font-size: 13px">详情</a>
               <el-button v-else link type="primary" size="small" @click="handleViewPr(row)">详情</el-button>
               <el-button
                 v-if="prCanActivate(row)"
@@ -675,7 +672,7 @@
                 <el-input v-model="prCreateForm.taskNo" placeholder="输入任务号" style="flex: 1" />
                 <el-button @click="handleQueryWorkItem" :loading="prBranchQuerying">查询</el-button>
               </div>
-              <div v-if="prBranchInfo" style="font-size: 12px; color: #909399; margin-top: 4px">
+              <div v-if="prBranchInfo" style="font-size: 12px; color: var(--ink-text-secondary); margin-top: 4px">
                 <div v-if="prBranchInfo.taskType">任务类型: {{ prBranchInfo.taskType }}</div>
                 <div v-if="prBranchInfo.iterationPath">迭代路径: {{ prBranchInfo.iterationPath }}</div>
                 <div v-if="prBranchInfo.inferredBranch">推断目标分支: {{ prBranchInfo.inferredBranch }}</div>
@@ -704,7 +701,7 @@
         <el-dialog v-model="prDetailVisible" title="PR 详情" width="600px">
           <el-descriptions :column="1" border v-if="currentPr">
             <el-descriptions-item label="PR ID">
-              <a v-if="getPrUrl(currentPr)" :href="getPrUrl(currentPr)" target="_blank" style="color: #409eff">
+              <a v-if="getPrUrl(currentPr)" :href="getPrUrl(currentPr)" target="_blank" style="color: var(--el-color-primary)">
                 #{{ currentPr.prId || currentPr.pr_id || currentPr.id }}
               </a>
               <span v-else>{{ currentPr.prId || currentPr.pr_id || currentPr.id }}</span>
@@ -731,10 +728,10 @@
         <el-dialog v-model="demandBuildDialogVisible" title="需求构建情况" width="60%">
           <div v-loading="demandBuildLoading">
             <template v-if="demandBuildData">
-              <div style="margin-bottom: 12px; font-size: 13px; color: #606266;">
+              <div style="margin-bottom: 12px; font-size: 13px; color: var(--ink-text-regular);">
                 需求 ID: <strong>{{ demandBuildData.demandId }}</strong>
               </div>
-              <el-table :data="demandBuildItems" stripe border size="small" max-height="400">
+              <el-table :data="demandBuildItems" stripe size="small" max-height="400">
                 <el-table-column prop="demand_id" label="需求ID" width="100" />
                 <el-table-column prop="title" label="标题" min-width="120" show-overflow-tooltip />
                 <el-table-column prop="products" label="产品线" width="130" />
@@ -798,7 +795,7 @@
         <!-- 构建记录 -->
         <div v-if="preRefactorBuildLogList.length > 0" style="margin-top: 8px;">
           <h4 style="margin: 8px 0">构建记录</h4>
-          <el-table :data="preRefactorBuildLogList" stripe border size="small" max-height="500">
+          <el-table :data="preRefactorBuildLogList" stripe size="small" max-height="500">
             <el-table-column prop="product_version_name" label="版本" min-width="180" show-overflow-tooltip />
             <el-table-column prop="product_iteration_name" label="迭代" width="140" />
             <el-table-column label="构建状态" width="110">
@@ -823,7 +820,7 @@
         <el-dialog v-model="buildDetailDialogVisible" title="构建制品" width="60%">
           <div v-loading="buildDetailLoading">
             <template v-if="buildDetailData">
-              <el-table :data="buildDetailData" stripe border size="small" max-height="500">
+              <el-table :data="buildDetailData" stripe size="small" max-height="500">
                 <el-table-column prop="app_name" label="应用" min-width="180" show-overflow-tooltip />
                 <el-table-column prop="build_pkg_Name" label="制品名" min-width="180" show-overflow-tooltip />
                 <el-table-column label="构建状态" width="100">
@@ -854,7 +851,7 @@
               <el-select v-model="vbPrForm.repoId" placeholder="选择门诊病历仓库" filterable style="width: 100%" @change="handleVbRepoChange">
                 <el-option v-for="r in vbPrRepoList" :key="r.id" :label="(r.displayName || r.name) + ' (' + r.name + ')'" :value="r.id" />
               </el-select>
-              <div style="font-size: 12px; color: #909399; margin-top: 4px">仅显示产品线=门诊病历的仓库</div>
+              <div style="font-size: 12px; color: var(--ink-text-secondary); margin-top: 4px">仅显示产品线=门诊病历的仓库</div>
             </el-form-item>
             <el-form-item label="任务分支" required>
               <el-input v-model="vbPrForm.sourceBranch" placeholder="如：feature/1717276" />
@@ -875,7 +872,7 @@
         </el-dialog>
       </el-tab-pane>
     </el-tabs>
-  </div>
+  </page-container>
 </template>
 
 <script setup lang="ts">
@@ -1072,14 +1069,14 @@ async function handleDdlPatchSearch() {
         const added = currentFields.filter((f: string) => !nextFields.includes(f))
         const deleted = nextFields.filter((f: string) => !currentFields.includes(f))
         if (added.length > 0 || deleted.length > 0) {
-          const addedHtml = added.map((f: string) => `<span style="color: #52c41a;">+${f}</span>`).join(' ')
-          const deletedHtml = deleted.map((f: string) => `<span style="color: #ff4d4f;">-${f}</span>`).join(' ')
+          const addedHtml = added.map((f: string) => `<span style="color: #67c23a;">+${f}</span>`).join(' ')
+          const deletedHtml = deleted.map((f: string) => `<span style="color: #f56c6c;">-${f}</span>`).join(' ')
           items[i]._fieldChangeHtml = addedHtml + ' ' + deletedHtml
         } else if (currentFields.length === nextFields.length) {
-          items[i]._fieldChangeHtml = '<span style="color: #8c8c8c;">无变化</span>'
+          items[i]._fieldChangeHtml = '<span style="color: var(--ink-text-secondary);">无变化</span>'
         }
       } else {
-        items[i]._fieldChangeHtml = '<span style="color: #8c8c8c;">(最早版本)</span>'
+        items[i]._fieldChangeHtml = '<span style="color: var(--ink-text-secondary);">(最早版本)</span>'
       }
     }
     ddlPatchItems.value = items
@@ -2155,30 +2152,18 @@ function handleVbCreatePr() {
 
 <style scoped>
 .ops-dashboard-view {
-  padding: 20px;
-}
+  }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
 
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-}
 
 .sub-panel {
   padding: 8px 0;
 }
 
 .sql-content {
-  font-family: monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px;
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   padding: 8px;
   border-radius: 4px;
   max-height: 200px;
@@ -2199,7 +2184,7 @@ function handleVbCreatePr() {
 }
 
 .logs-viewer {
-  background: #f5f7fa;
+  background: var(--el-fill-color);
   padding: 12px;
   border-radius: 4px;
   margin-top: 12px;
@@ -2242,7 +2227,7 @@ function handleVbCreatePr() {
 
 .stat-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-top: 4px;
 }
 
@@ -2257,7 +2242,7 @@ function handleVbCreatePr() {
 
 .sync-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   margin-left: 16px;
 }
 
@@ -2268,7 +2253,7 @@ function handleVbCreatePr() {
   margin-bottom: 16px;
   border: 1px solid #91d5ff;
   font-size: 14px;
-  color: #595959;
+  color: var(--ink-text-regular);
 }
 
 .pl-stat {
@@ -2277,7 +2262,7 @@ function handleVbCreatePr() {
 
 .product-line-card {
   background: #fff;
-  border: 1px solid #e8e8e8;
+  border: 1px solid #e1dbcb;
   border-radius: 8px;
   margin-bottom: 16px;
   overflow: hidden;
@@ -2352,11 +2337,11 @@ function handleVbCreatePr() {
 }
 
 .idle-title {
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .published-title {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .repo-card {
@@ -2376,7 +2361,7 @@ function handleVbCreatePr() {
 }
 
 .published-card {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border: 1px solid #b3d8ff;
 }
 
@@ -2391,24 +2376,24 @@ function handleVbCreatePr() {
 .repo-name {
   font-weight: 500;
   font-size: 14px;
-  color: #303133;
+  color: var(--ink-text);
 }
 
 .module-stats {
   font-size: 12px;
   font-weight: normal;
-  color: #606266;
+  color: var(--ink-text-regular);
   margin-left: 4px;
 }
 
 .module-count {
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .collapse-icon {
   font-size: 16px;
-  color: #909399;
+  color: var(--ink-text-secondary);
   width: 20px;
   text-align: center;
 }
@@ -2426,7 +2411,7 @@ function handleVbCreatePr() {
 }
 
 .demand-id a {
-  color: #409eff;
+  color: var(--el-color-primary);
   text-decoration: none;
 }
 
@@ -2435,7 +2420,7 @@ function handleVbCreatePr() {
 }
 
 .demand-branch {
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .demand-status-tag {
@@ -2449,25 +2434,25 @@ function handleVbCreatePr() {
 }
 
 .idle-repo-tag {
-  background: #f5f5f5;
+  background: var(--el-border-color-extra-light);
   padding: 6px 14px;
   border-radius: 4px;
   font-size: 13px;
-  color: #595959;
+  color: var(--ink-text-regular);
 }
 
 .closed-card {
-  background: #f5f5f5;
-  border: 1px solid #d9d9d9;
+  background: var(--el-border-color-extra-light);
+  border: 1px solid var(--el-border-color);
 }
 
 .closed-title {
-  color: #909399;
+  color: var(--ink-text-secondary);
 }
 
 .closed-repo-card {
-  background: #fafafa;
-  border: 1px solid #e4e7ed;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--paper-border);
   border-radius: 6px;
   padding: 12px;
   margin-bottom: 8px;
@@ -2479,7 +2464,7 @@ function handleVbCreatePr() {
 
 .repo-name-small {
   font-size: 12px;
-  color: #606266;
+  color: var(--ink-text-regular);
   margin-right: 8px;
 }
 </style>
