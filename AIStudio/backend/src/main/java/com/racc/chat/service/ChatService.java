@@ -1,5 +1,6 @@
 package com.racc.chat.service;
 
+import com.racc.agent.service.AgentConfigService;
 import com.racc.chat.entity.ChatConversationEntity;
 import com.racc.chat.entity.ChatMessageEntity;
 import com.racc.chat.repository.ChatConversationRepository;
@@ -35,6 +36,7 @@ public class ChatService {
     private final ChatConversationRepository conversationRepo;
     private final ChatMessageRepository messageRepo;
     private final KnowledgeService knowledgeService;
+    private final AgentConfigService agentConfigService;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     @Value("${spring.ai.openai.chat.enabled:false}")
@@ -49,17 +51,19 @@ public class ChatService {
     public ChatService(ChatConversationRepository conversationRepo,
                        ChatMessageRepository messageRepo,
                        KnowledgeService knowledgeService,
+                       AgentConfigService agentConfigService,
                        ChatModel chatModel) {
         this.conversationRepo = conversationRepo;
         this.messageRepo = messageRepo;
         this.knowledgeService = knowledgeService;
+        this.agentConfigService = agentConfigService;
         this.chatModel = chatModel;
     }
 
     /**
      * SSE 流式聊天。
      */
-    public SseEmitter streamChat(String message, String projectId, String conversationId, String username) {
+    public SseEmitter streamChat(String message, String projectId, String conversationId, String username, String agentName) {
         // timeout 5 分钟
         SseEmitter emitter = new SseEmitter(300000L);
 
@@ -72,7 +76,7 @@ public class ChatService {
                 saveMessage(convId, "user", message, null);
 
                 // 3. 生成回复（模拟或真实）
-                String reply = generateReply(convId, message);
+                String reply = generateReply(convId, message, agentName);
 
                 // 4. 发送 SSE 事件（data 负载只放 JSON 本身，"data:" 前缀由 SseEmitter 自动添加，
                 //    切勿再手动拼接，否则前端收到 "data:data:{...}" 双重前缀会解析失败）
@@ -114,13 +118,13 @@ public class ChatService {
      * 注意：知识库检索 + LLM 调用必须在事务之外执行（SQLite 单连接下，
      * 在写事务内执行 JPA/FTS 查询会返回空），故先无事务生成回复，再事务保存。
      */
-    public Map<String, Object> sendMessage(String message, String projectId, String conversationId, String username) {
+    public Map<String, Object> sendMessage(String message, String projectId, String conversationId, String username, String agentName) {
         // 1. 先取/建会话与保存用户消息（短事务，由 repository 自带事务保证）
         String convId = getOrCreateConversation(conversationId, message, projectId, username);
         saveMessage(convId, "user", message, null);
 
         // 2. 生成回复（无事务：内部检索知识库 + 调 LLM，均不可处于写事务中）
-        String reply = generateReply(convId, message);
+        String reply = generateReply(convId, message, agentName);
 
         // 3. 保存助手消息与会话标题（短写事务）
         persistAssistantReply(convId, reply, message);
@@ -218,16 +222,37 @@ public class ChatService {
         });
     }
 
-    private String generateReply(String conversationId, String message) {
+    /**
+     * 读取指定 Agent 的 systemPrompt；Agent 不存在或未配置时返回 null（不影响正常对话）。
+     */
+    private String loadAgentSystemPrompt(String agentName) {
+        if (agentName == null || agentName.isBlank()) return null;
+        try {
+            Map<String, Object> cfg = agentConfigService.getConfig(agentName);
+            Object sp = cfg == null ? null : cfg.get("systemPrompt");
+            if (sp instanceof String s && !s.isBlank()) return s;
+        } catch (Exception e) {
+            log.warn("读取 Agent[{}] 配置失败，按默认助手处理: {}", agentName, e.getMessage());
+        }
+        return null;
+    }
+
+    private String generateReply(String conversationId, String message, String agentName) {
         if (!llmEnabled || chatModel == null) {
             return mockReply(message);
         }
         try {
+            // 0. 若指定了 Agent，读取其 systemPrompt 作为人设指令
+            String agentPrompt = loadAgentSystemPrompt(agentName);
+
             // 1. 先检索知识库（全库 Top5，关键词+FTS5，自动降级 LIKE）
             List<Map<String, Object>> kbHits = retrieveFromKnowledgeBase(message);
 
             // 2. 组装对话历史
             List<Message> messages = new ArrayList<>();
+            if (agentPrompt != null) {
+                messages.add(new SystemMessage(agentPrompt));
+            }
             List<ChatMessageEntity> history = messageRepo.findByConversationIdOrderByCreatedAtAsc(conversationId);
             for (ChatMessageEntity m : history) {
                 if ("user".equals(m.getRole())) {
@@ -255,8 +280,8 @@ public class ChatService {
                         "并优先选用与问题性质匹配的参考类型。若参考内容不足以回答，可结合你的通用知识补充，但必须明确区分。" +
                         "回答末尾用「参考文档：」列出你实际引用了的文档标题（仅列相关项）。\n" +
                         styleGuide + "\n\n【知识库参考】\n" + kbContext;
-                // 将系统指令作为首条 SystemMessage 注入（Spring AI 的 UserMessage/AssistantMessage 之外）
-                messages.add(0, new SystemMessage(sysInstruction));
+                // 知识库指令置于最前；若已有 Agent 人设，则保持人设在第 0 位、知识库紧随其后
+                messages.add(agentPrompt != null ? 1 : 0, new SystemMessage(sysInstruction));
             }
 
             Prompt prompt = new Prompt(messages);

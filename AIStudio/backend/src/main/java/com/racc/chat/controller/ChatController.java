@@ -39,8 +39,9 @@ public class ChatController {
         String message = (String) body.getOrDefault("message", "");
         String projectId = (String) body.get("projectId");
         String conversationId = (String) body.get("conversationId");
+        String agentName = (String) body.get("agentName");
         String username = currentUsername();
-        return chatService.streamChat(message, projectId, conversationId, username);
+        return chatService.streamChat(message, projectId, conversationId, username, agentName);
     }
 
     /**
@@ -51,8 +52,9 @@ public class ChatController {
         String message = (String) body.getOrDefault("message", "");
         String projectId = (String) body.get("projectId");
         String conversationId = (String) body.get("conversationId");
+        String agentName = (String) body.get("agentName");
         String username = currentUsername();
-        return ResponseEntity.ok(chatService.sendMessage(message, projectId, conversationId, username));
+        return ResponseEntity.ok(chatService.sendMessage(message, projectId, conversationId, username, agentName));
     }
 
     /**
