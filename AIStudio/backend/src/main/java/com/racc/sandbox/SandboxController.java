@@ -15,7 +15,7 @@ import java.util.NoSuchElementException;
  * GET    /api/sandbox                           沙箱列表（全量，倒序）
  * GET    /api/sandbox/active                    活跃沙箱列表（旧契约：每项含 taskId + status）
  * POST   /api/sandbox/create                    创建沙箱 {name 必填, taskId?, mode?, timeoutSeconds?}
- * POST   /api/sandbox/config                    更新运行时开关 {enabled?, dockerEnabled?}，写 system_configs 即时生效
+ * POST   /api/sandbox/config                    更新运行时开关 {enabled?, dockerEnabled?}，内存态即时生效（重启后回退 application.yml）
  * POST   /api/sandbox/{id}/exec                 在沙箱内异步执行命令 {command 必填, timeoutSeconds?}
  * GET    /api/sandbox/{id}/executions           执行历史（不含 output 大字段）
  * GET    /api/sandbox/executions/{executionId}  执行详情（全量含 output）
@@ -63,7 +63,7 @@ public class SandboxController {
         }
     }
 
-    /** POST /api/sandbox/config — 更新运行时开关（写 system_configs，即时生效无需重启），返回最新完整状态 */
+    /** POST /api/sandbox/config — 更新运行时开关（内存态即时生效，重启后回退 application.yml），返回最新完整状态 */
     @PostMapping("/config")
     public ResponseEntity<?> updateConfig(@RequestBody Map<String, Object> body) {
         boolean changed = false;

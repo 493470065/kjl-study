@@ -31,7 +31,7 @@
       </div>
     </div>
 
-    <el-alert v-if="!tfsAvailable" :title="tfsMessage" type="warning" :closable="false" show-icon style="margin-bottom: 16px">
+    <el-alert v-if="!tfsAvailable && activeSource !== 'mcp'" :title="tfsMessage" type="warning" :closable="false" show-icon style="margin-bottom: 16px">
       <template #default>
         请检查 <router-link to="/mcp">MCP 管理</router-link> 中 tfs-query-winex 是否已注册，
         以及 data/mcp/tfs-query-winex/config.json 的 serverUrl/pat 是否有效
@@ -43,17 +43,17 @@
       <el-tab-pane v-for="tab in TABS" :key="tab.key" :name="tab.key" :label="tab.label" />
     </el-tabs>
 
-    <template v-if="activeQueryId">
+    <template v-if="hasDataSource">
       <!-- 工具栏 -->
       <div class="tab-toolbar">
         <el-button @click="loadTab(activeTab)" :loading="activeLoading">
           <el-icon><Refresh /></el-icon> 刷新
         </el-button>
         <el-button @click="openConfigDialog">
-          <el-icon><Setting /></el-icon> 配置查询链接
+          <el-icon><Setting /></el-icon> 配置数据源
         </el-button>
         <el-select
-          v-if="activeTab === 'inventory'"
+          v-if="activeTab === 'inventory' && activeSource === 'tfs'"
           v-model="selectedProject"
           placeholder="选择项目"
           clearable
@@ -62,7 +62,50 @@
         >
           <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.name" />
         </el-select>
-        <span class="query-hint">查询 ID：{{ activeQueryId }}</span>
+        <span v-if="activeSource === 'mcp'" class="query-hint">
+          MCP 数据源：{{ mcpServerName(activeMcpCfg?.serverId) }} · {{ activeMcpCfg?.toolName }}
+        </span>
+        <span v-else-if="isFollowingTab" class="query-hint">实时同步当前账号在 TFS 关注的工作项（{{ tabItems['followed'].length }} 条）</span>
+        <span v-else-if="activeQueryId" class="query-hint">查询 ID：{{ activeQueryId }}</span>
+      </div>
+
+      <!-- 查询条件：仅在当前 Tab 已加载的数据内过滤，不重新请求数据源 -->
+      <div class="filter-bar">
+        <el-input
+          v-model="idFilter"
+          placeholder="需求 ID（多个用逗号或空格分隔）"
+          clearable
+          style="width: 240px"
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <el-select v-model="stateFilter" placeholder="状态" clearable style="width: 160px">
+          <el-option v-for="s in stateOptions" :key="s" :label="s" :value="s" />
+        </el-select>
+        <el-select
+          v-model="productFilter"
+          placeholder="产品名称"
+          clearable
+          filterable
+          style="width: 220px"
+        >
+          <el-option v-for="p in productOptions" :key="p" :label="p" :value="p" />
+        </el-select>
+        <el-select
+          v-model="customerFilter"
+          placeholder="客户名称"
+          clearable
+          filterable
+          style="width: 260px"
+        >
+          <el-option v-for="c in customerOptions" :key="c" :label="c" :value="c" />
+        </el-select>
+        <el-button :disabled="!hasFilter" @click="resetFilters">
+          <el-icon><RefreshLeft /></el-icon> 重置
+        </el-button>
+        <span v-if="hasFilter" class="filter-count">
+          筛选出 {{ filteredActiveItems.length }} / {{ activeItems.length }} 条
+        </span>
       </div>
 
       <!-- 列表（分页，默认每页 20 条） -->
@@ -73,28 +116,35 @@
         style="cursor: pointer; margin-top: 12px"
         @row-click="showDetail"
       >
+        <!-- 列顺序：ID、标题、类型、产品名称、优先级、状态、指派人、客户名称、创建时间、操作 -->
         <el-table-column prop="id" label="ID" width="100">
           <template #default="{ row }">
             <a :href="getWorkItemUrl(row.id)" target="_blank" class="id-link" @click.stop>{{ row.id }}</a>
           </template>
         </el-table-column>
-        <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
         <el-table-column prop="type" label="类型" width="100">
           <template #default="{ row }">
             <el-tag :type="typeTagColor(row.type)" size="small">{{ row.type }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.productName">{{ row.productName }}</span>
+            <span v-else style="color: #b8b1a0">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="priority" label="优先级" width="80" />
         <el-table-column prop="state" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="stateTagColor(row.state)" size="small">{{ row.state }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="assignedTo" label="指派人" width="120" show-overflow-tooltip />
-        <el-table-column prop="priority" label="优先级" width="80" />
-        <el-table-column prop="tags" label="标签" min-width="200">
+        <el-table-column prop="customerName" label="客户名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag v-for="tag in parseTags(row.tags)" :key="tag" size="small" style="margin-right: 4px; margin-bottom: 2px">{{ tag }}</el-tag>
-            <span v-if="!row.tags" style="color: #b8b1a0">-</span>
+            <span v-if="row.customerName">{{ row.customerName }}</span>
+            <span v-else style="color: #b8b1a0">-</span>
           </template>
         </el-table-column>
         <el-table-column prop="createdDate" label="创建时间" width="160">
@@ -111,6 +161,10 @@
       </el-table>
 
       <el-empty v-if="!activeLoading && activeItems.length === 0" description="暂无数据，可尝试刷新或检查查询链接配置" />
+      <el-empty
+        v-else-if="!activeLoading && filteredActiveItems.length === 0"
+        description="没有符合查询条件的数据，可调整条件或点击「重置」"
+      />
 
       <div class="pagination-bar" v-if="filteredActiveItems.length > 0">
         <el-pagination
@@ -124,33 +178,105 @@
       </div>
     </template>
 
-    <!-- 当前 Tab 尚未配置查询链接 -->
-    <el-empty v-else :description="`「${activeTabDef.label}」尚未配置查询链接`">
+    <!-- 当前 Tab 尚未配置数据源 -->
+    <el-empty v-else :description="`「${activeTabDef.label}」尚未配置数据源`">
       <el-button type="primary" @click="openConfigDialog">
-        <el-icon><Setting /></el-icon> 配置查询链接
+        <el-icon><Setting /></el-icon> 配置数据源
       </el-button>
     </el-empty>
 
-    <!-- 配置查询链接对话框 -->
-    <el-dialog v-model="configDialogVisible" :title="`配置查询链接 - ${activeTabDef.label}`" width="580px">
-      <el-form label-width="90px">
-        <el-form-item label="查询链接">
-          <el-input
-            v-model="configInput"
-            placeholder="粘贴 TFS 存储查询链接或 Query ID（GUID）"
-            clearable
-          />
+    <!-- 配置数据源对话框：TFS 查询链接 / MCP 工具 二选一 -->
+    <el-dialog v-model="configDialogVisible" :title="`配置数据源 - ${activeTabDef.label}`" width="680px">
+      <el-form label-width="110px">
+        <el-form-item label="数据源类型">
+          <el-radio-group v-model="formSource">
+            <el-radio value="tfs">TFS 查询链接</el-radio>
+            <el-radio value="mcp">MCP 工具</el-radio>
+          </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="activeTabDef.defaultQueryId" label="默认查询">
-          <span class="config-default">{{ activeTabDef.defaultQueryId }}</span>
-        </el-form-item>
+
+        <!-- 数据源 = TFS 查询链接（原有能力，完整保留） -->
+        <template v-if="formSource === 'tfs'">
+          <el-form-item label="查询链接">
+            <el-input
+              v-model="configInput"
+              placeholder="粘贴 TFS 存储查询链接或 Query ID（GUID）"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item v-if="activeTabDef.defaultQueryId" label="默认查询">
+            <span class="config-default">{{ activeTabDef.defaultQueryId }}</span>
+          </el-form-item>
+          <div class="config-tip">
+            支持直接粘贴 TFS 查询 URL（如 .../queries?queryId=xxxx），系统将自动提取其中的查询 ID。
+            注：「关注需求」默认走 TFS 关注列表端点，无需配置查询链接。
+          </div>
+        </template>
+
+        <!-- 数据源 = MCP 工具（新增能力） -->
+        <template v-else>
+          <el-form-item label="MCP 服务">
+            <el-select
+              v-model="formMcp.serverId"
+              placeholder="选择 MCP 服务"
+              style="width: 100%"
+              @change="onMcpServerChange"
+            >
+              <el-option
+                v-for="s in mcpServers"
+                :key="s.id"
+                :label="`${s.displayName || s.name}（${s.name}）`"
+                :value="s.id"
+              />
+            </el-select>
+            <div v-if="mcpServers.length === 0" class="config-default" style="margin-top: 4px">
+              暂无已注册的 MCP 服务，请先到「MCP 管理」注册后再配置
+            </div>
+          </el-form-item>
+          <el-form-item label="工具">
+            <el-select
+              v-model="formMcp.toolName"
+              placeholder="选择工具"
+              filterable
+              style="width: 100%"
+              :loading="mcpToolsLoading"
+              @change="onMcpToolChange"
+            >
+              <el-option v-for="t in mcpTools" :key="t.name" :label="t.name" :value="t.name">
+                <span>{{ t.name }}</span>
+                <span style="float: right; color: #909399; font-size: 12px; margin-left: 12px">
+                  {{ (t.description || '').slice(0, 40) }}
+                </span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="参数 (JSON)">
+            <el-input
+              v-model="formMcp.argumentsText"
+              type="textarea"
+              :rows="5"
+              placeholder='例如：{ "queryId": "920c888e-d178-48f9-b890-31e7a03244d6" }（无参数可留空或填 {}）'
+            />
+          </el-form-item>
+          <el-form-item label="结果路径">
+            <el-input
+              v-model="formMcp.resultPath"
+              placeholder="可选，如 data.items；留空则取结果本身（自动识别 items/data/value 等包裹）"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="">
+            <el-button size="small" :loading="mcpTestLoading" @click="testMcpCall">测试调用</el-button>
+            <span v-if="mcpTestInfo" class="config-default" style="margin-left: 10px">{{ mcpTestInfo }}</span>
+          </el-form-item>
+          <div class="config-tip">
+            任意 MCP 服务的工具均可作为该 Tab 的数据源。工具返回结果需为工作项数组（或含数组的对象）；
+            字段名会自动做常见别名归一（如 System.Title → 标题），未识别字段原样保留。
+          </div>
+        </template>
       </el-form>
-      <div class="config-tip">
-        支持直接粘贴 TFS 查询 URL（如 .../queries?queryId=xxxx），系统将自动提取其中的查询 ID；
-        保存后立即按该链接拉取数据展示。
-      </div>
       <template #footer>
-        <el-button v-if="activeTabDef.defaultQueryId" @click="resetTabConfig">恢复默认</el-button>
+        <el-button @click="resetTabConfig">恢复默认</el-button>
         <el-button @click="configDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="configSaving" @click="saveTabConfig">保存并加载</el-button>
       </template>
@@ -170,6 +296,8 @@
           <el-descriptions-item label="优先级">{{ selectedItem.priority || '-' }}</el-descriptions-item>
           <el-descriptions-item label="严重程度">{{ selectedItem.severity || '-' }}</el-descriptions-item>
           <el-descriptions-item label="项目">{{ selectedItem.project || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="产品名称">{{ selectedItem.productName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户名称">{{ selectedItem.customerName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="区域路径" :span="2">{{ selectedItem.areaPath || '-' }}</el-descriptions-item>
           <el-descriptions-item label="迭代路径" :span="2">{{ selectedItem.iterationPath || '-' }}</el-descriptions-item>
           <el-descriptions-item label="标签" :span="2">{{ selectedItem.tags || '-' }}</el-descriptions-item>
@@ -218,9 +346,9 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Refresh, Setting } from '@element-plus/icons-vue'
+import { Refresh, RefreshLeft, Search, Setting } from '@element-plus/icons-vue'
 import { tfsApi, type TfsWorkItem, type TfsProject, type TfsAttachment } from '@/api/tfs'
-import { getConfigMap, listConfigs, saveConfig, deleteConfig, type SystemConfig } from '@/api/systemConfig'
+import { mcpApi, type McpServer, type McpToolInfo } from '@/api/mcp'
 import MarkdownIt from 'markdown-it'
 import { formatDateTime } from '@/utils/format'
 
@@ -242,7 +370,7 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { key: 'followed', label: '关注需求', defaultQueryId: 'c2e20ee4-ddee-4a7b-bf7a-8f8a34a44785', configKey: 'reqboard.query.followed' },
+  { key: 'followed', label: '关注需求', defaultQueryId: '', configKey: 'reqboard.query.followed' },
   { key: 'translation', label: '多语翻译', defaultQueryId: '', configKey: 'reqboard.query.translation' },
   { key: 'special', label: '多语专项', defaultQueryId: '', configKey: 'reqboard.query.special' },
   { key: 'inventory', label: '病历库存', defaultQueryId: '920c888e-d178-48f9-b890-31e7a03244d6', configKey: 'reqboard.query.inventory' }
@@ -260,25 +388,75 @@ function getWorkItemUrl(id: number) {
   return `${tfsServerUrl.value}/_workitems/edit/${id}`
 }
 
-async function loadTfsServerUrl() {
-  try {
-    const configMap = await getConfigMap()
-    if (configMap['tfs.serverUrl']) {
-      tfsServerUrl.value = configMap['tfs.serverUrl']
-    }
-  } catch {
-    // use default
-  }
-}
+// tfsServerUrl 使用 DEFAULT_TFS_URL 常量，原 system_configs 读取已移除
+
 
 // ========== 各 Tab 数据 ==========
 const tabItems = reactive<Record<string, TfsWorkItem[]>>({ followed: [], translation: [], special: [], inventory: [] })
 const tabLoading = reactive<Record<string, boolean>>({ followed: false, translation: false, special: false, inventory: false })
 const tabLoaded = reactive<Record<string, boolean>>({ followed: false, translation: false, special: false, inventory: false })
 
-// 每个 Tab 的查询 ID：优先取系统配置（可配置），否则用默认值
+// ========== 数据源配置（每个 Tab 二选一，均持久化到系统配置 group=reqboard）==========
+//   reqboard.query.{tab}  → TFS 存储查询 ID（原有能力，完整保留）
+//   reqboard.source.{tab} → 'tfs' | 'mcp'
+//   reqboard.mcp.{tab}    → { serverId, toolName, arguments, resultPath }
+type TabSource = 'tfs' | 'mcp'
+
+interface McpTabConfig {
+  serverId: number
+  toolName: string
+  argumentsText: string   // JSON 文本，便于直接编辑
+  resultPath: string      // 可选：从结果对象中取数组的路径，如 data.items
+}
+
+const sourceKeyOf = (tabKey: string) => `reqboard.source.${tabKey}`
+const mcpKeyOf = (tabKey: string) => `reqboard.mcp.${tabKey}`
+
+// ========== 配置持久化（本地存储，取代已删除的系统配置后端） ==========
+const LS_KEY = 'reqboard.config.v1'
+
+/** 默认配置：固化自删除前的系统配置；系统配置功能下掉后，配置改存浏览器本地 */
+interface ReqboardConfig {
+  queryIds: Record<string, string>
+  sources: Record<string, TabSource>
+  mcp: Record<string, McpTabConfig>
+}
+
+const DEFAULT_CONFIG: ReqboardConfig = {
+  queryIds: { translation: '27630627-cbd7-42e8-bbbb-7fef58055d85' },
+  sources: { followed: 'mcp' },
+  mcp: {
+    followed: { serverId: 1, toolName: 'following', argumentsText: '{}', resultPath: '' }
+  }
+}
+
+function cloneDefaultConfig(): ReqboardConfig {
+  return JSON.parse(JSON.stringify(DEFAULT_CONFIG))
+}
+
+function loadLocalConfig(): ReqboardConfig {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (!raw) return cloneDefaultConfig()
+    const parsed = JSON.parse(raw)
+    return {
+      queryIds: { ...DEFAULT_CONFIG.queryIds, ...(parsed.queryIds || {}) },
+      sources: { ...DEFAULT_CONFIG.sources, ...(parsed.sources || {}) },
+      mcp: { ...DEFAULT_CONFIG.mcp, ...(parsed.mcp || {}) }
+    }
+  } catch {
+    return cloneDefaultConfig()
+  }
+}
+
+function saveLocalConfig(cfg: ReqboardConfig) {
+  localStorage.setItem(LS_KEY, JSON.stringify(cfg))
+}
+
+// 每个 Tab 的查询 ID：优先取本地配置，否则用默认值
 const configuredQueryIds = reactive<Record<string, string>>({})
-const configEntryIds = reactive<Record<string, number>>({})
+const configuredSources = reactive<Record<string, TabSource>>({})
+const configuredMcp = reactive<Record<string, McpTabConfig>>({})
 
 const activeTabDef = computed<TabDef>(() => TABS.find(t => t.key === activeTab.value) || TABS[0])
 const activeQueryId = computed(() =>
@@ -286,26 +464,51 @@ const activeQueryId = computed(() =>
 )
 const activeItems = computed<TfsWorkItem[]>(() => tabItems[activeTab.value] || [])
 const activeLoading = computed(() => !!tabLoading[activeTab.value])
+// 关注需求走专用 following 端点（当前 PAT 账号在 TFS 关注的工作项），不依赖 stored queryId
+const isFollowingTab = computed(() => activeTab.value === 'followed')
+
+// 当前 Tab 的数据源类型与 MCP 配置
+const activeSource = computed<TabSource>(() => (configuredSources[activeTab.value] === 'mcp' ? 'mcp' : 'tfs'))
+const activeMcpCfg = computed<McpTabConfig | undefined>(() => configuredMcp[activeTab.value])
+
+// 当前 Tab 是否具备可用数据源（决定展示列表还是「去配置」空态）
+const hasDataSource = computed(() => {
+  if (activeSource.value === 'mcp') {
+    return !!(activeMcpCfg.value?.serverId && activeMcpCfg.value?.toolName)
+  }
+  if (isFollowingTab.value) return true   // 关注需求零配置
+  return !!activeQueryId.value
+})
+
+/** 解析持久化的 MCP 配置 JSON（兼容旧的 argumentsText 写法） */
+function parseMcpConfig(raw: string): McpTabConfig | null {
+  try {
+    const o = JSON.parse(raw)
+    if (!o || typeof o !== 'object') return null
+    return {
+      serverId: Number(o.serverId) || 0,
+      toolName: String(o.toolName || ''),
+      argumentsText: o.arguments != null
+        ? JSON.stringify(o.arguments, null, 2)
+        : (typeof o.argumentsText === 'string' ? o.argumentsText : ''),
+      resultPath: String(o.resultPath || '')
+    }
+  } catch {
+    return null
+  }
+}
 
 async function loadTabConfigs() {
   try {
-    const list = await listConfigs('reqboard')
-    // 同一 configKey 可能因历史原因存在多条记录：保留最新一条，清理其余重复
-    const byKey = new Map<string, SystemConfig[]>()
-    for (const c of list) {
-      if (c.configKey.startsWith('reqboard.query.') && c.configValue) {
-        if (!byKey.has(c.configKey)) byKey.set(c.configKey, [])
-        byKey.get(c.configKey)!.push(c)
-      }
+    const cfg = loadLocalConfig()
+    for (const [k, v] of Object.entries(cfg.queryIds)) {
+      if (v) configuredQueryIds[k] = v
     }
-    for (const [key, entries] of byKey) {
-      entries.sort((a, b) => (a.id || 0) - (b.id || 0))
-      const latest = entries[entries.length - 1]
-      configuredQueryIds[key] = latest.configValue
-      if (latest.id != null) configEntryIds[key] = latest.id
-      for (const dup of entries.slice(0, -1)) {
-        if (dup.id != null) deleteConfig(dup.id).catch(() => { /* 清理失败不影响主流程 */ })
-      }
+    for (const [k, v] of Object.entries(cfg.sources)) {
+      configuredSources[k] = v === 'mcp' ? 'mcp' : 'tfs'
+    }
+    for (const [k, v] of Object.entries(cfg.mcp)) {
+      if (v) configuredMcp[k] = v
     }
   } catch {
     // 读取失败时使用默认查询
@@ -315,9 +518,129 @@ async function loadTabConfigs() {
 const projects = ref<TfsProject[]>([])
 const selectedProject = ref('')
 
+// ========== MCP 数据源：结果解析 + 字段归一 ==========
+
+/** 从 MCP 工具返回值中取出记录数组：优先按 resultPath，其次识别常见包裹字段 */
+function extractArray(raw: any, resultPath?: string): any[] {
+  let node: any = raw
+  if (resultPath && resultPath.trim()) {
+    for (const seg of resultPath.split('.')) {
+      const s = seg.trim()
+      if (!s) continue
+      node = node == null ? undefined : node[s]
+    }
+  }
+  if (Array.isArray(node)) return node
+  if (node && typeof node === 'object') {
+    for (const k of ['items', 'data', 'value', 'workItems', 'results', 'list', 'rows', 'records']) {
+      if (Array.isArray(node[k])) return node[k]
+    }
+  }
+  return []
+}
+
+/** 常见字段别名 → 表格标准列（兼容 TFS 原始字段名与 PascalCase） */
+const FIELD_ALIASES: Record<string, string[]> = {
+  id: ['id', 'ID', 'Id', 'workItemId', 'workItemID', 'System.Id'],
+  title: ['title', 'Title', 'System.Title', 'name', 'summary'],
+  type: ['type', 'workItemType', 'System.WorkItemType'],
+  state: ['state', 'System.State', 'status'],
+  assignedTo: ['assignedTo', 'assignTo', 'System.AssignedTo', 'owner'],
+  project: ['project', 'System.TeamProject', 'teamProject'],
+  // 产品名称 / 客户名称（卫宁自定义字段，MCP 数据源同样按此别名归一）
+  productName: ['productName', 'product', 'Winning.Product.Name', 'ProductName', 'Product.Name'],
+  customerName: ['customerName', 'customer', 'Winning.Custom.Name', 'CustomerName', 'Custom.Name', 'hospital'],
+  priority: ['priority', 'Microsoft.VSTS.Common.Priority', 'System.Priority'],
+  severity: ['severity', 'Microsoft.VSTS.Common.Severity'],
+  areaPath: ['areaPath', 'System.AreaPath'],
+  iterationPath: ['iterationPath', 'System.IterationPath'],
+  tags: ['tags', 'System.Tags'],
+  createdDate: ['createdDate', 'System.CreatedDate', 'createdAt', 'created'],
+  changedDate: ['changedDate', 'System.ChangedDate', 'changedAt', 'updatedAt'],
+  description: ['description', 'System.Description'],
+  reproSteps: ['reproSteps', 'Microsoft.VSTS.TCM.ReproSteps'],
+  acceptanceCriteria: ['acceptanceCriteria', 'Microsoft.VSTS.Common.AcceptanceCriteria'],
+  requirementAnalysis: ['requirementAnalysis'],
+  url: ['url', 'htmlLink']
+}
+
+/** 把任意 MCP 返回的单条记录归一为表格可渲染的工作项（未识别字段原样保留） */
+function normalizeWorkItem(raw: any): TfsWorkItem {
+  if (raw == null) return {} as TfsWorkItem
+  if (typeof raw !== 'object') return { title: String(raw) } as TfsWorkItem
+  const out: any = {}
+  for (const [std, aliases] of Object.entries(FIELD_ALIASES)) {
+    for (const a of aliases) {
+      const v = raw[a]
+      if (v !== undefined && v !== null && v !== '') { out[std] = v; break }
+    }
+  }
+  const nId = Number(out.id)
+  if (Number.isFinite(nId)) out.id = nId
+  if (out.priority !== undefined) {
+    const nPr = Number(out.priority)
+    if (Number.isFinite(nPr)) out.priority = nPr
+  }
+  return { ...raw, ...out } as TfsWorkItem
+}
+
+/** 解析「参数 (JSON)」文本框；格式错误抛异常由调用方提示 */
+function parseArgsText(text: string): Record<string, any> {
+  const t = (text || '').trim()
+  if (!t) return {}
+  const parsed = JSON.parse(t)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('参数必须是 JSON 对象')
+  }
+  return parsed
+}
+
 async function loadTab(key: string) {
   const tab = TABS.find(t => t.key === key)
   if (!tab) return
+
+  // ---- 数据源 = MCP 工具 ----
+  if (configuredSources[key] === 'mcp') {
+    const cfg = configuredMcp[key]
+    if (!cfg || !cfg.serverId || !cfg.toolName) {
+      tabItems[key] = []
+      tabLoaded[key] = true
+      return
+    }
+    tabLoading[key] = true
+    try {
+      const args = parseArgsText(cfg.argumentsText)
+      const raw = await mcpApi.callTool(cfg.serverId, cfg.toolName, args)
+      const rows = extractArray(raw, cfg.resultPath)
+      if (rows.length === 0 && raw && typeof raw === 'object' && 'raw' in raw) {
+        ElMessage.warning(`「${tab.label}」MCP 工具未返回 JSON 数组，请在配置中调整「结果路径」`)
+      }
+      tabItems[key] = rows.map(normalizeWorkItem)
+      tabLoaded[key] = true
+    } catch (e: any) {
+      const detail = e?.response?.data?.error
+      ElMessage.error(detail ? `加载「${tab.label}」失败：${detail}` : `加载「${tab.label}」失败，请检查 MCP 数据源配置`)
+    } finally {
+      tabLoading[key] = false
+    }
+    return
+  }
+
+  // ---- 数据源 = TFS ----
+  // 关注需求：专用 following 端点（忽略 stored queryId，实时随账号关注变化）
+  if (key === 'followed') {
+    tabLoading[key] = true
+    try {
+      tabItems[key] = await tfsApi.getFollowed()
+      tabLoaded[key] = true
+    } catch (e: any) {
+      const detail = e?.response?.data?.error
+      ElMessage.error(detail ? `加载「关注需求」失败：${detail}` : `加载「关注需求」失败，请检查 TFS 服务`)
+    } finally {
+      tabLoading[key] = false
+    }
+    return
+  }
   const qid = configuredQueryIds[tab.configKey] || tab.defaultQueryId
   if (!qid) {
     tabItems[key] = []
@@ -340,13 +663,110 @@ async function loadTab(key: string) {
   }
 }
 
-// ========== 配置查询链接对话框 ==========
+// ========== 配置数据源对话框（TFS 查询链接 / MCP 工具）==========
 const configDialogVisible = ref(false)
 const configInput = ref('')
 const configSaving = ref(false)
 
+const formSource = ref<TabSource>('tfs')
+const formMcp = reactive<McpTabConfig>({ serverId: 0, toolName: '', argumentsText: '', resultPath: '' })
+
+const mcpServers = ref<McpServer[]>([])
+const mcpTools = ref<McpToolInfo[]>([])
+const mcpToolsLoading = ref(false)
+const mcpTestLoading = ref(false)
+const mcpTestInfo = ref('')
+
+function mcpServerName(id?: number) {
+  if (!id) return '未选择'
+  const s = mcpServers.value.find(x => x.id === id)
+  return s ? (s.displayName || s.name) : `#${id}`
+}
+
+async function ensureMcpServers() {
+  if (mcpServers.value.length > 0) return
+  try { mcpServers.value = await mcpApi.listServers() } catch { /* 列表失败不影响其它数据源 */ }
+}
+
+async function loadMcpTools(serverId: number) {
+  mcpTools.value = []
+  if (!serverId) return
+  mcpToolsLoading.value = true
+  try {
+    mcpTools.value = await mcpApi.getServerTools(serverId)
+  } catch {
+    ElMessage.error('获取 MCP 工具列表失败，请确认该服务可正常启动')
+  } finally {
+    mcpToolsLoading.value = false
+  }
+}
+
+function onMcpServerChange(id: number) {
+  formMcp.toolName = ''
+  mcpTestInfo.value = ''
+  loadMcpTools(id)
+}
+
+/** 选中工具后按其 inputSchema 生成参数模板，减少手填成本 */
+function onMcpToolChange(name: string) {
+  const schema = mcpTools.value.find(t => t.name === name)?.inputSchema
+  const props = schema?.properties as Record<string, any> | undefined
+  if (!props) return
+  const sample: Record<string, any> = {}
+  for (const [k, v] of Object.entries(props)) {
+    const meta = (v || {}) as any
+    sample[k] = meta.default ?? (meta.type === 'number' ? 0 : meta.type === 'boolean' ? false : '')
+  }
+  formMcp.argumentsText = JSON.stringify(sample, null, 2)
+}
+
+/** 测试调用：验证「服务 + 工具 + 参数 + 结果路径」能否解析出记录数组 */
+async function testMcpCall() {
+  if (!formMcp.serverId || !formMcp.toolName) {
+    ElMessage.error('请先选择 MCP 服务和工具')
+    return
+  }
+  let args: Record<string, any> = {}
+  try {
+    args = parseArgsText(formMcp.argumentsText)
+  } catch {
+    ElMessage.error('参数 JSON 格式错误')
+    return
+  }
+  mcpTestLoading.value = true
+  mcpTestInfo.value = ''
+  try {
+    const raw = await mcpApi.callTool(formMcp.serverId, formMcp.toolName, args)
+    const rows = extractArray(raw, formMcp.resultPath)
+    if (rows.length > 0) {
+      const first = rows[0] || {}
+      const preview = String(first.title ?? first.id ?? '').slice(0, 30)
+      mcpTestInfo.value = `调用成功，解析到 ${rows.length} 条记录${preview ? `（示例：${preview}）` : ''}`
+    } else if (raw && typeof raw === 'object' && 'raw' in raw) {
+      mcpTestInfo.value = '调用成功，但结果不是 JSON，请调整「结果路径」或改造工具输出'
+    } else {
+      mcpTestInfo.value = '调用成功，但未解析到数组，请调整「结果路径」（如 data.items）'
+    }
+  } catch (e: any) {
+    mcpTestInfo.value = '调用失败：' + (e?.response?.data?.error || e?.message || '未知错误')
+  } finally {
+    mcpTestLoading.value = false
+  }
+}
+
 function openConfigDialog() {
   configInput.value = activeQueryId.value || ''
+  const key = activeTab.value
+  formSource.value = configuredSources[key] === 'mcp' ? 'mcp' : 'tfs'
+  const cfg = configuredMcp[key]
+  formMcp.serverId = cfg?.serverId || 0
+  formMcp.toolName = cfg?.toolName || ''
+  formMcp.argumentsText = cfg?.argumentsText || ''
+  formMcp.resultPath = cfg?.resultPath || ''
+  mcpTestInfo.value = ''
+  if (formSource.value === 'mcp') {
+    ensureMcpServers().then(() => { if (formMcp.serverId) loadMcpTools(formMcp.serverId) })
+  }
   configDialogVisible.value = true
 }
 
@@ -357,24 +777,40 @@ function extractGuid(input: string): string | null {
 }
 
 async function saveTabConfig() {
-  const guid = extractGuid(configInput.value)
-  if (!guid) {
-    ElMessage.error('未识别到有效的查询 ID（GUID），请粘贴 TFS 查询链接或 Query ID')
-    return
-  }
   const tab = activeTabDef.value
   configSaving.value = true
   try {
-    const saved = await saveConfig({
-      id: configEntryIds[tab.configKey],
-      configKey: tab.configKey,
-      configValue: guid,
-      description: `需求看板「${tab.label}」查询 ID`,
-      configGroup: 'reqboard'
-    })
-    // 记录返回的行 id，下次保存走 upsert，避免重复插入
-    if (saved?.id != null) configEntryIds[tab.configKey] = saved.id
-    configuredQueryIds[tab.configKey] = guid
+    const cfg = loadLocalConfig()
+    if (formSource.value === 'mcp') {
+      if (!formMcp.serverId || !formMcp.toolName) {
+        ElMessage.error('请选择 MCP 服务和工具')
+        return
+      }
+      let args: Record<string, any> = {}
+      try {
+        args = parseArgsText(formMcp.argumentsText)
+      } catch {
+        ElMessage.error('参数 JSON 格式错误')
+        return
+      }
+      cfg.mcp[tab.key] = { ...formMcp }
+      cfg.sources[tab.key] = 'mcp'
+      configuredMcp[tab.key] = { ...formMcp }
+      configuredSources[tab.key] = 'mcp'
+    } else {
+      const guid = extractGuid(configInput.value)
+      if (!guid) {
+        ElMessage.error('未识别到有效的查询 ID（GUID），请粘贴 TFS 查询链接或 Query ID')
+        return
+      }
+      cfg.queryIds[tab.configKey] = guid
+      cfg.sources[tab.key] = 'tfs'
+      configuredQueryIds[tab.configKey] = guid
+      configuredSources[tab.key] = 'tfs'
+      delete cfg.mcp[tab.key]
+      delete configuredMcp[tab.key]
+    }
+    saveLocalConfig(cfg)
     configDialogVisible.value = false
     ElMessage.success('已保存，正在刷新数据')
     tabLoaded[tab.key] = false
@@ -388,14 +824,18 @@ async function saveTabConfig() {
 
 async function resetTabConfig() {
   const tab = activeTabDef.value
-  const entryId = configEntryIds[tab.configKey]
-  if (entryId != null) {
-    try { await deleteConfig(entryId) } catch { /* 忽略删除失败，仍回退本地状态 */ }
-    delete configEntryIds[tab.configKey]
-  }
+  // 清除该 Tab 的三类配置：查询链接 / 数据源类型 / MCP 配置
+  const cfg = loadLocalConfig()
+  delete cfg.queryIds[tab.configKey]
+  delete cfg.sources[tab.key]
+  delete cfg.mcp[tab.key]
+  saveLocalConfig(cfg)
   delete configuredQueryIds[tab.configKey]
+  delete configuredSources[tab.key]
+  delete configuredMcp[tab.key]
   configInput.value = tab.defaultQueryId
-  ElMessage.success(tab.defaultQueryId ? '已恢复默认查询' : '已清除配置')
+  formSource.value = 'tfs'
+  ElMessage.success(tab.defaultQueryId ? '已恢复默认数据源' : '已清除配置')
   tabLoaded[tab.key] = false
   await loadTab(tab.key)
 }
@@ -420,13 +860,51 @@ function renderMarkdown(content: string) {
   return md.render(content)
 }
 
-function parseTags(tags?: string): string[] {
-  if (!tags) return []
-  return tags.split(';').filter(t => t.trim())
+// ========== 统计栏 / 过滤（均针对当前 Tab） ==========
+// stateFilter 与统计栏状态标签双向联动（点标签 = 选状态，选状态 = 高亮标签）
+const stateFilter = ref('')
+// 查询条件：ID / 产品名称 / 客户名称
+const idFilter = ref('')
+const productFilter = ref('')
+const customerFilter = ref('')
+
+const hasFilter = computed(
+  () => !!(idFilter.value.trim() || stateFilter.value || productFilter.value || customerFilter.value)
+)
+
+/** 去重 + 排序，用于生成下拉选项（选项取自当前 Tab 已加载数据） */
+function uniqueValues(values: (string | undefined)[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const v of values) {
+    const s = (v || '').trim()
+    if (!s || seen.has(s)) continue
+    seen.add(s)
+    out.push(s)
+  }
+  return out.sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
 }
 
-// ========== 统计栏 / 过滤（均针对当前 Tab） ==========
-const stateFilter = ref('')
+// 下拉选项随当前 Tab 数据变化，无需额外请求
+const stateOptions = computed(() => uniqueValues(activeItems.value.map(i => i.state)))
+const productOptions = computed(() => uniqueValues(activeItems.value.map(i => i.productName)))
+const customerOptions = computed(() => uniqueValues(activeItems.value.map(i => i.customerName)))
+
+/** ID 支持一次查多个：逗号/空格/分号分隔，任一命中即可（同时兼容部分匹配） */
+function matchId(item: TfsWorkItem, keyword: string): boolean {
+  const tokens = keyword.trim().split(/[\s,，;；]+/).filter(Boolean)
+  if (tokens.length === 0) return true
+  const id = String(item.id ?? '')
+  return tokens.some(t => id.includes(t))
+}
+
+function resetFilters() {
+  idFilter.value = ''
+  productFilter.value = ''
+  customerFilter.value = ''
+  stateFilter.value = ''
+  currentPage.value = 1
+}
 
 const currentStats = computed(() => {
   const items = activeItems.value
@@ -442,11 +920,19 @@ function toggleStateFilter(state: string) {
   stateFilter.value = stateFilter.value === state ? '' : state
 }
 
-// 状态过滤后的当前 Tab 数据
+// 应用查询条件（ID / 产品名称 / 客户名称 / 状态）后的当前 Tab 数据
 const filteredActiveItems = computed(() => {
-  let items = activeItems.value
-  if (stateFilter.value) items = items.filter(item => item.state === stateFilter.value)
-  return items
+  const kw = idFilter.value
+  const state = stateFilter.value
+  const product = productFilter.value
+  const customer = customerFilter.value
+  return activeItems.value.filter(item => {
+    if (state && item.state !== state) return false
+    if (product && (item.productName || '') !== product) return false
+    if (customer && (item.customerName || '') !== customer) return false
+    if (kw.trim() && !matchId(item, kw)) return false
+    return true
+  })
 })
 
 // ========== 分页（默认每页 20 条） ==========
@@ -458,7 +944,8 @@ const pagedItems = computed(() => {
   return filteredActiveItems.value.slice(start, start + pageSize.value)
 })
 
-watch([activeTab, stateFilter, pageSize], () => {
+// 切换 Tab 或改动任一查询条件、页大小时回到第一页
+watch([activeTab, stateFilter, idFilter, productFilter, customerFilter, pageSize], () => {
   currentPage.value = 1
 })
 
@@ -482,11 +969,20 @@ async function checkStatus() {
 async function showDetail(row: TfsWorkItem) {
   try {
     const detail = await tfsApi.getWorkItem(row.id)
-    selectedItem.value = detail
+    // 详情接口覆盖不到 MCP 自定义字段时，保留列表行里已有的值
+    selectedItem.value = { ...row, ...detail }
     attachments.value = []
     showDrawer.value = true
   } catch (e) {
-    ElMessage.error('获取工作项详情失败')
+    // MCP 数据源的行未必存在于 TFS：降级为展示列表字段，避免点开一片空白
+    if (row && row.id) {
+      selectedItem.value = row
+      attachments.value = []
+      showDrawer.value = true
+      ElMessage.warning('该条来自 MCP 数据源，未能获取 TFS 完整详情，已展示列表字段')
+    } else {
+      ElMessage.error('获取工作项详情失败')
+    }
   }
 }
 
@@ -510,10 +1006,10 @@ function downloadAttachment(attachment: TfsAttachment) {
 
 // ========== Tab 切换 ==========
 function handleTabChange(name: string | number) {
-  stateFilter.value = ''
-  currentPage.value = 1
+  resetFilters()   // 切换 Tab 时清空查询条件（含状态），并回到第一页
   const key = String(name)
-  if (!tabLoaded[key] && tfsAvailable.value) {
+  // TFS 不可用时，走 MCP 数据源的 Tab 仍应正常加载
+  if (!tabLoaded[key] && (tfsAvailable.value || configuredSources[key] === 'mcp')) {
     loadTab(key)
   }
 }
@@ -521,9 +1017,11 @@ function handleTabChange(name: string | number) {
 // ========== 初始化 ==========
 onMounted(async () => {
   await checkStatus()
-  await loadTfsServerUrl()
   await loadTabConfigs()
-  if (tfsAvailable.value) {
+  // 预加载 MCP 服务列表：工具栏/配置弹窗要展示服务名
+  await ensureMcpServers()
+  // TFS 不可用时，若首屏 Tab 走的是 MCP 数据源，仍应尝试加载
+  if (tfsAvailable.value || configuredSources['followed'] === 'mcp') {
     loadTab('followed')
   }
 })
@@ -586,6 +1084,23 @@ onMounted(async () => {
   color: var(--ink-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--el-fill-color);
+  border-radius: 6px;
+}
+
+.filter-count {
+  font-size: 12px;
+  color: var(--ink-text-secondary);
   white-space: nowrap;
 }
 

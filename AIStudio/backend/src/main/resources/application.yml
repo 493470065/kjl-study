@@ -62,7 +62,7 @@ racc:
     expire-hours: 24
   data-dir: ../data
   tfs:
-    # 默认值可被 system_configs 表 tfs.serverUrl 覆盖
+    # TFS 站点基址（构建 _workitems 链接、桥接 MCP 取数的默认值；系统配置功能已下掉，此处为唯一来源）
     default-server-url: http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0
     # 桥接目标：需求看板 /api/tfs/* 转发到该 MCP Server 的工具
     mcp-server: tfs-query-winex

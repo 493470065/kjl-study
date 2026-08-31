@@ -178,3 +178,19 @@ SESSION: 2026-08-29 18:30
   ed25519 SSH 密钥且已注册在 GitHub 账号（493470065），直接改 SSH 远端：
   git@github.com:493470065/kjl-study.git，推送成功
 - 现状：main 与 origin/main 同步；以后推送走 SSH，无需再输凭据、不会过期
+### 修复：根路径仍落首页（隐藏不彻底）（2026-08-31）
+- 现象：首页已移出左侧菜单，但浏览器打开 http://localhost:8090/ 仍显示首页
+- 根因：隐藏只做了菜单层——路由 "/" 仍绑 DashboardView 且 skipMenuCheck，
+  只有登录跳转走 firstAccessibleMenu，根路径本身无引导
+- 修复：① Dashboard 路由 path "/" → "/dashboard"（URL 直达保留，口径=其他隐藏页）；
+  ② router 守卫：已登录访问 "/" → firstAccessibleMenu()（与登录落地同口径，
+  复用 stores/auth，循环导入仅运行期访问、安全）；③ UserManagementView
+  menuOptions 首页 path 同步 "/" → "/dashboard"
+- 验证：vue-tsc 无新增错误（存量 5 处与本次无关）；vite HMR 生效
+
+### 菜单开放：TFS 看板（2026-08-31）
+- 诉求：隐藏页中开放 /tfs-dashboard 进左侧菜单
+- 实现：App.vue「工作区」组新增 TFS 看板项（图标 DataBoard，已导入），
+  组 v-if anyAccess 同步纳入；UserManagementView menuOptions 加 TFS 看板
+  （非管理员可按用户授权）；隐藏页注释更新（补首页，共 15 个隐藏）
+- 验证：DataBoard 存在于 icons-vue 包（全局注册可解析）；vite HMR 生效

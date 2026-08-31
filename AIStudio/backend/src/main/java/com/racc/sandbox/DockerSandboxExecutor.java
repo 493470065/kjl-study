@@ -1,9 +1,8 @@
 package com.racc.sandbox;
 
-import com.racc.systemconfig.SystemConfigService;
-import com.racc.systemconfig.entity.SystemConfigEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,12 +31,11 @@ public class DockerSandboxExecutor {
     /** 探测结果缓存时长（docker info 较慢，/status 轮询不能每次都跑） */
     private static final long PROBE_CACHE_MS = 5 * 60 * 1000L;
 
-    /** 运行时开关在 system_configs 表的分组与键（DB 优先，缺省回退 application.yml） */
-    private static final String CONFIG_GROUP = "sandbox";
-    private static final String CONFIG_KEY_DOCKER_ENABLED = "docker.enabled";
-
     @Value("${racc.sandbox.docker.enabled:false}")
     private boolean dockerEnabled;
+
+    /** 运行时开关有效值：初始化来自 application.yml，运行时可切换（内存态） */
+    private volatile boolean effectiveDockerEnabled = false;
 
     @Value("${racc.sandbox.docker.image:agentos-sandbox:latest}")
     private String image;
@@ -48,64 +46,36 @@ public class DockerSandboxExecutor {
     @Value("${racc.sandbox.docker.cpus:1}")
     private String cpus;
 
-    private final SystemConfigService systemConfigService;
-
     private volatile long probeAt = 0L;
     private volatile boolean probeDockerOk = false;
     private volatile boolean probeImageOk = false;
 
-    public DockerSandboxExecutor(SystemConfigService systemConfigService) {
-        this.systemConfigService = systemConfigService;
+    @PostConstruct
+    public void initRuntimeSwitch() {
+        this.effectiveDockerEnabled = dockerEnabled;
     }
 
     // ========== 运行时开关 ==========
 
     /**
-     * 生效的 Docker 引擎开关：system_configs 表 sandbox.docker.enabled 优先（运行时可改、即时生效），
-     * 未配置时回退 application.yml 的 racc.sandbox.docker.enabled。
+     * 生效的 Docker 引擎开关：取内存态开关（初始化来自 application.yml 的 racc.sandbox.docker.enabled，
+     * 运行时可切换，重启后回退 yml）。
      */
     public boolean isDockerEffectivelyEnabled() {
-        try {
-            String v = systemConfigService.getConfigMap(CONFIG_GROUP).get(CONFIG_KEY_DOCKER_ENABLED);
-            if (v != null && !v.isBlank()) {
-                return "true".equalsIgnoreCase(v.trim());
-            }
-        } catch (Exception e) {
-            log.warn("读取 Docker 引擎运行时开关失败，回退 application.yml 配置: {}", e.getMessage());
-        }
-        return dockerEnabled;
+        return effectiveDockerEnabled;
     }
 
-    /** 开关来源：system_configs（运行时）/ application.yml（静态） */
+    /** 开关来源：application.yml（静态）+ 内存运行时覆盖 */
     public String enabledSource() {
-        try {
-            String v = systemConfigService.getConfigMap(CONFIG_GROUP).get(CONFIG_KEY_DOCKER_ENABLED);
-            if (v != null && !v.isBlank()) {
-                return "system_configs";
-            }
-        } catch (Exception ignored) {
-            // 回退来源即 application.yml
-        }
         return "application.yml";
     }
 
-    /** 设置运行时开关：upsert system_configs（group=sandbox, key=docker.enabled），并立即失效探测缓存 */
+    /** 设置运行时开关（内存态，立即失效探测缓存，重启后回退 application.yml） */
     @Transactional
     public void setRuntimeEnabled(boolean enabled) {
-        SystemConfigEntity existing = systemConfigService.listByGroup(CONFIG_GROUP).stream()
-                .filter(c -> CONFIG_KEY_DOCKER_ENABLED.equals(c.getConfigKey()))
-                .findFirst()
-                .orElse(null);
-        if (existing == null) {
-            existing = new SystemConfigEntity();
-            existing.setConfigGroup(CONFIG_GROUP);
-            existing.setConfigKey(CONFIG_KEY_DOCKER_ENABLED);
-            existing.setDescription("沙箱 Docker 引擎开关（运行时配置，优先于 application.yml）");
-        }
-        existing.setConfigValue(String.valueOf(enabled));
-        systemConfigService.save(existing);
+        this.effectiveDockerEnabled = enabled;
         invalidateProbe();
-        log.info("沙箱 Docker 引擎运行时开关已更新: enabled={}", enabled);
+        log.info("沙箱 Docker 引擎运行时开关已更新（内存态）: enabled={}", enabled);
     }
 
     /** 失效探测缓存（切换开关后立即重新探测） */

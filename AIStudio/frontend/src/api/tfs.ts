@@ -8,6 +8,10 @@ export interface TfsWorkItem {
   state: string
   assignedTo?: string
   project?: string
+  /** 产品名称（卫宁自定义字段 Winning.Product.Name） */
+  productName?: string
+  /** 客户名称（卫宁自定义字段 Winning.Custom.Name） */
+  customerName?: string
   description?: string
   reproSteps?: string
   priority?: number
@@ -61,6 +65,11 @@ export const tfsApi = {
     const params: any = { queryId }
     if (project) params.project = project
     return http.get<TfsWorkItem[]>('/tfs/query', { params }).then(r => r.data)
+  },
+
+  /** 关注需求：当前 PAT 账号在 TFS 关注的工作项（跨项目），走专用 following 端点 */
+  getFollowed() {
+    return http.get<TfsWorkItem[]>('/tfs/following').then(r => r.data)
   },
 
   createWorkItem(data: {

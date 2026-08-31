@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { startProgress, doneProgress } from '@/utils/routerProgress';
+import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -11,10 +12,11 @@ const router = createRouter({
       meta: { public: true }
     },
     {
-      path: "/",
+      // 首页已从菜单隐藏，改挂 /dashboard（URL 直达仍可访问）；
+      // 根路径 "/" 在守卫中按登录落地口径跳转首个可访问菜单
+      path: "/dashboard",
       name: "dashboard",
       component: () => import("@/views/dashboard/DashboardView.vue"),
-      // 首页对所有登录用户开放（健康检查卡承担新手引导）
       meta: { title: "首页", skipMenuCheck: true }
     },
     {
@@ -40,6 +42,12 @@ const router = createRouter({
       name: "requirements",
       component: () => import("@/views/requirements/RequirementsView.vue"),
       meta: { title: "需求看板" }
+    },
+    {
+      path: "/todos",
+      name: "todos",
+      component: () => import("@/views/todo/TodoView.vue"),
+      meta: { title: "待办事项", skipMenuCheck: true }
     },
     {
       path: "/knowledge",
@@ -76,19 +84,6 @@ const router = createRouter({
       name: "sandbox",
       component: () => import("@/views/sandbox/SandboxView.vue"),
       meta: { title: "沙箱管理" }
-    },
-    {
-      path: "/settings",
-      name: "settings",
-      component: () => import("@/views/settings/SettingsView.vue"),
-      meta: { title: "系统配置" }
-    },
-    {
-      path: "/personal-config",
-      name: "personalConfig",
-      component: () => import("@/views/settings/PersonalConfigView.vue"),
-      // 个人配置是每位用户管理自己 API Key 的页面，对所有登录用户开放
-      meta: { title: "个人配置", skipMenuCheck: true }
     },
     {
       path: "/users",
@@ -220,6 +215,11 @@ router.beforeEach((to) => {
 
   if (isLoggedIn && to.name === "login") {
     return { path: "/chat" };
+  }
+
+  // 首页已隐藏：已登录访问根路径时，按登录落地口径跳首个可访问菜单（未登录仍走上方登录回跳）
+  if (isLoggedIn && to.path === "/") {
+    return useAuthStore().firstAccessibleMenu();
   }
 
   // 细粒度菜单权限：无权访问时给出 403 页，而不是踢回登录页

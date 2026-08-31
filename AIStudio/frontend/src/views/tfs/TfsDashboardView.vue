@@ -191,7 +191,7 @@ import {
   getWorkloadDetails, getExceptionDetails, fixException,
   type WorkloadData, type ExceptionData, type WeeklyData, type DailyData
 } from '@/api/tfsStats'
-import { getConfigMap } from '@/api/systemConfig'
+// tfsServerUrl 使用 DEFAULT_TFS_URL 常量，原 system_configs 读取已移除
 
 const loading = ref(false)
 const workloadLoading = ref(false)
@@ -272,16 +272,7 @@ function getWorkItemUrl(workItemId: number | string) {
   return `${tfsServerUrl.value}/_workitems/edit/${workItemId}`
 }
 
-async function loadTfsServerUrl() {
-  try {
-    const configMap = await getConfigMap()
-    if (configMap['tfs.serverUrl']) {
-      tfsServerUrl.value = configMap['tfs.serverUrl']
-    }
-  } catch {
-    // fallback to default
-  }
-}
+// tfsServerUrl 使用 DEFAULT_TFS_URL 常量，原 system_configs 读取已移除
 
 async function loadAll() {
   loading.value = true
@@ -427,7 +418,7 @@ function exportToExcel(data: any[], filename: string) {
   URL.revokeObjectURL(a.href)
 }
 
-onMounted(() => { loadAll(); loadTfsServerUrl() })
+onMounted(() => { loadAll() })
 </script>
 
 <style scoped>

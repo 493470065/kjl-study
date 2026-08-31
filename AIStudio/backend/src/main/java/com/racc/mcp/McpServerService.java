@@ -177,6 +177,59 @@ public class McpServerService {
         }
     }
 
+    // ========== 通用工具调用（供需求看板等页面按配置取数） ==========
+
+    /** 工具调用结果缓存：serverId|toolName|args → JsonNode，120s TTL（避免切 Tab/刷新反复握手） */
+    private record CallCache(long timestamp, JsonNode node) {}
+    private final ConcurrentHashMap<String, CallCache> callCache = new ConcurrentHashMap<>();
+    private static final long CALL_CACHE_TTL_MS = 120_000L;
+
+    /**
+     * 调用 MCP 工具并把结果解析为 JSON（带 120s 缓存）。
+     * 工具返回 isError 时抛 RuntimeException（message 为工具给出的错误原文）；
+     * 结果非 JSON 时返回 {"raw": "..."} 由调用方决定如何处理。
+     */
+    public JsonNode callToolJson(Long id, String toolName, Map<String, Object> args) {
+        String cacheKey = id + "|" + toolName + "|" + stableArgs(args);
+        CallCache cached = callCache.get(cacheKey);
+        if (cached != null && System.currentTimeMillis() - cached.timestamp < CALL_CACHE_TTL_MS) {
+            log.debug("MCP 调用命中缓存: {}", cacheKey);
+            return cached.node;
+        }
+        String raw;
+        try {
+            raw = callTool(id, toolName, args);
+        } catch (Exception e) {
+            throw new RuntimeException("MCP 工具调用失败(" + toolName + "): " + e.getMessage(), e);
+        }
+        if (raw != null && raw.startsWith("[工具返回错误] ")) {
+            throw new RuntimeException(raw.substring("[工具返回错误] ".length()));
+        }
+        JsonNode node;
+        if (raw == null || raw.isBlank()) {
+            node = objectMapper.createObjectNode().put("raw", "");
+        } else {
+            try {
+                node = objectMapper.readTree(raw);
+            } catch (Exception e) {
+                node = objectMapper.createObjectNode()
+                        .put("raw", raw.length() > 2000 ? raw.substring(0, 2000) : raw);
+            }
+        }
+        callCache.put(cacheKey, new CallCache(System.currentTimeMillis(), node));
+        return node;
+    }
+
+    /** 参数序列化为稳定字符串（排序，保证 key 顺序不影响缓存键） */
+    private String stableArgs(Map<String, Object> args) {
+        if (args == null || args.isEmpty()) return "";
+        try {
+            return objectMapper.writeValueAsString(new TreeMap<>(args));
+        } catch (Exception e) {
+            return String.valueOf(args);
+        }
+    }
+
     /** 按配置构建临时进程（与 startServer 同一套命令/工作目录/环境变量解析） */
     private Process buildProcess(McpServerEntity entity) throws IOException {
         ProcessBuilder pb = new ProcessBuilder();
@@ -481,22 +534,38 @@ public class McpServerService {
 
     // ========== 工具列表 ==========
 
+    /**
+     * 获取 MCP Server 真实工具列表（复用 fetchTools 的临时进程握手 + tools/list，5 分钟缓存）。
+     * 旧实现返回硬编码 mock（仅 "execute"），导致管理界面看不到真实工具（如 following）。
+     */
     public List<McpToolInfo> getServerTools(Long id) {
         McpServerEntity entity = getServer(id);
-        // 当前返回模拟数据，后续可扩展为从 MCP 协议获取
-        // 通过读取服务器进程的 stdio 交互获取工具列表
-        List<McpToolInfo> tools = new ArrayList<>();
-        tools.add(new McpToolInfo("execute", "执行 MCP 工具调用", Map.of(
-                "type", "object",
-                "properties", Map.of(
-                        "action", Map.of("type", "string", "description", "操作名称"),
-                        "params", Map.of("type", "object", "description", "操作参数")
-                )
-        )));
-        entity.setToolCount(tools.size());
-        entity.setUpdatedAt(LocalDateTime.now());
-        repository.save(entity);
-        return tools;
+        try {
+            List<JsonNode> toolNodes = fetchTools(id);
+            List<McpToolInfo> tools = new ArrayList<>();
+            for (JsonNode t : toolNodes) {
+                String name = t.path("name").asText("");
+                String description = t.path("description").asText("");
+                Map<String, Object> inputSchema = null;
+                JsonNode schemaNode = t.path("inputSchema");
+                if (!schemaNode.isMissingNode() && !schemaNode.isNull()) {
+                    try {
+                        inputSchema = objectMapper.convertValue(schemaNode,
+                                new TypeReference<Map<String, Object>>() {});
+                    } catch (Exception ignored) {
+                        inputSchema = null;
+                    }
+                }
+                tools.add(new McpToolInfo(name, description, inputSchema));
+            }
+            entity.setToolCount(tools.size());
+            entity.setUpdatedAt(LocalDateTime.now());
+            repository.save(entity);
+            return tools;
+        } catch (Exception e) {
+            log.warn("MCP [{}] 获取工具列表失败: {}", entity.getName(), e.getMessage());
+            throw new RuntimeException("获取工具列表失败: " + e.getMessage(), e);
+        }
     }
 
     // ========== 连通性测试 ==========

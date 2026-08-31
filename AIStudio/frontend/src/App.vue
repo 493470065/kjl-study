@@ -8,9 +8,9 @@
       <el-menu :default-active="activeMenu" router :default-openeds="systemSubMenuOpen"
           :collapse="sidebarCollapsed" :collapse-transition="false"
           background-color="transparent" text-color="#d8d2c2" active-text-color="var(--paper)">
-        <!-- 工作区 -->
-        <el-menu-item-group v-if="anyAccess(['/chat', '/requirements'])">
-          <template #title>工作区</template>
+        <!-- 工作台：用户每天打开处理事务的入口 -->
+        <el-menu-item-group v-if="anyAccess(['/chat', '/requirements', '/todos'])">
+          <template #title><el-divider class="menu-group-divider" /></template>
           <el-menu-item v-if="auth.hasMenuAccess('/chat')" index="/chat">
             <el-icon><ChatDotRound /></el-icon>
             <span>AI 对话</span>
@@ -19,11 +19,15 @@
             <el-icon><Document /></el-icon>
             <span>需求看板</span>
           </el-menu-item>
+          <el-menu-item v-if="auth.hasMenuAccess('/todos')" index="/todos">
+            <el-icon><Bell /></el-icon>
+            <span>待办事项</span>
+          </el-menu-item>
         </el-menu-item-group>
 
-        <!-- 资产与能力 -->
+        <!-- 智能资产：平台沉淀的可复用 AI 能力 -->
         <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents'])">
-          <template #title>资产与能力</template>
+          <template #title><el-divider class="menu-group-divider" /></template>
           <el-menu-item v-if="auth.hasMenuAccess('/knowledge')" index="/knowledge">
             <el-icon><Collection /></el-icon>
             <span>知识库</span>
@@ -38,9 +42,9 @@
           </el-menu-item>
         </el-menu-item-group>
 
-        <!-- 业务编排 -->
+        <!-- 自动化编排：把能力串联并落地执行 -->
         <el-menu-item-group v-if="anyAccess(['/workflows', '/automate', '/sandbox'])">
-          <template #title>业务编排</template>
+          <template #title><el-divider class="menu-group-divider" /></template>
           <el-menu-item v-if="auth.hasMenuAccess('/workflows')" index="/workflows">
             <el-icon><Share /></el-icon>
             <span>工作流编排</span>
@@ -55,9 +59,9 @@
           </el-menu-item>
         </el-menu-item-group>
 
-        <!-- 连接与基座 -->
+        <!-- 集成与基座：对外连接与模型底座（MCP 连接 + LLM 基座） -->
         <el-menu-item-group v-if="anyAccess(['/mcp', '/providers'])">
-          <template #title>连接与基座</template>
+          <template #title><el-divider class="menu-group-divider" /></template>
           <el-menu-item v-if="auth.hasMenuAccess('/mcp')" index="/mcp">
             <el-icon><Connection /></el-icon>
             <span>MCP 管理</span>
@@ -69,8 +73,8 @@
         </el-menu-item-group>
 
         <!--
-          其余页面（运行时监控、审计、评估、结构化输出、本地算力、团队协作、
-          运营看板、开发环境、系统配置、定时任务、Webhook、产品线、仓库、账户管理）
+          其余页面（首页、运行时监控、审计、评估、结构化输出、本地算力、团队协作、
+          运营看板、开发环境、定时任务、Webhook、产品线、仓库、账户管理、TFS 看板）
           维持隐藏：路由仍可直接通过 URL 访问，需要开放时在此按 hasMenuAccess 添加即可。
         -->
       </el-menu>
@@ -97,9 +101,6 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="router.push('/personal-config')">
-                  <el-icon><Setting /></el-icon>个人配置
-                </el-dropdown-item>
                 <el-dropdown-item @click="pwdDialogVisible = true">
                   <el-icon><Lock /></el-icon>修改密码
                 </el-dropdown-item>
@@ -161,7 +162,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { HomeFilled, ChatDotRound, Document, Collection, Connection, List, User, Monitor, Setting, DataLine, OfficeBuilding, Cpu, Files, Key, Share, DataBoard, DataAnalysis, ArrowDown, Lock, SwitchButton, Fold, Expand, Clock, Link, Box } from '@element-plus/icons-vue'
+import { HomeFilled, ChatDotRound, Document, Collection, Connection, List, User, Monitor, Setting, DataLine, OfficeBuilding, Cpu, Files, Key, Share, DataAnalysis, ArrowDown, Lock, SwitchButton, Fold, Expand, Clock, Link, Box, Bell } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 
@@ -170,7 +171,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const activeMenu = computed(() => route.path)
 const systemSubMenuOpen = computed(() =>
-  ['/settings', '/scheduled-tasks', '/product-lines', '/repository', '/users', '/webhook'].includes(route.path) ? ['system-group'] : []
+  ['/scheduled-tasks', '/product-lines', '/repository', '/users', '/webhook'].includes(route.path) ? ['system-group'] : []
 )
 const isLogin = computed(() => route.path === '/login')
 
@@ -465,16 +466,22 @@ body {
   background-color: var(--ink-light) !important;
 }
 
-/* 菜单分组标题：小字淡墨，让分组意图可感知（替代原先"分隔线代替组名"的做法） */
+/* 菜单分组：不再显示中文组名，改用贯通分隔符代替 */
 .el-aside .el-menu-item-group__title {
-  font-size: 11px;
-  color: #9a9382;
-  letter-spacing: 2px;
-  padding: 12px 20px 4px;
+  padding: 6px 14px 2px;
+}
+
+.el-aside .menu-group-divider {
+  margin: 2px 0;
+  border-top: 1px solid rgba(216, 210, 194, 0.18);
 }
 
 .el-aside.collapsed .el-menu-item-group__title {
-  padding: 8px 0 2px;
+  padding: 6px 0 2px;
+}
+
+.el-aside.collapsed .menu-group-divider {
+  margin: 2px 6px;
 }
 
 .el-aside .el-menu-item-group {

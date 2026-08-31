@@ -86,8 +86,6 @@
               </div>
               <div class="markdown-body" v-html="renderMsg(msg)" />
               <div class="msg-actions">
-                <button v-if="msg.isError" class="msg-action-btn danger" @click="goPersonalConfig">去配置
-                </button>
                 <button v-if="msg.isError" class="msg-action-btn" @click="regenerate">重试</button>
                 <button v-else class="msg-action-btn" @click="copyMessage(msg)">复制</button>
                 <button v-if="!msg.isError && index === messages.length - 1 && !loading"
@@ -138,22 +136,6 @@
 
       <div class="input-area">
         <div class="input-wrapper">
-          <div class="input-top">
-            <el-select
-              v-model="selectedAgent"
-              size="small"
-              class="agent-select"
-              aria-label="选择回答的 Agent"
-              @change="saveAgentPref"
-            >
-              <el-option label="默认助手" value="" />
-              <el-option v-for="a in agents" :key="a.name" :label="a.name" :value="a.name">
-                <span>{{ a.name }}</span>
-                <span class="agent-option-desc">{{ (a.description || '').slice(0, 20) }}</span>
-              </el-option>
-            </el-select>
-            <span v-if="selectedAgent" class="agent-hint">将由「{{ selectedAgent }}」回答</span>
-          </div>
           <textarea
             ref="textareaRef"
             v-model="inputText"
@@ -187,7 +169,6 @@ import {
 } from '@element-plus/icons-vue'
 import { chatApi } from '@/api/chat'
 import type { ChatMessage, ToolCallInfo, ConversationInfo } from '@/api/chat'
-import { listAgentConfigs, type AgentConfig } from '@/api/agentConfig'
 import { useMarkdown } from '@/composables/useMarkdown'
 
 type UiMessage = ChatMessage & { isError?: boolean }
@@ -204,8 +185,6 @@ const initializing = ref(true)
 const streamingContent = ref('')
 const sidebarCollapsed = ref(false)
 const pendingToolCalls = ref<ToolCallInfo[]>([])
-const agents = ref<AgentConfig[]>([])
-const selectedAgent = ref(localStorage.getItem('chat-agent-name') || '')
 
 const stickToBottom = ref(true)
 const showJumpBottom = ref(false)
@@ -220,7 +199,6 @@ let streamBuf = ''
 let flushTimer: number | null = null
 
 onMounted(async () => {
-  loadAgents()
   await loadConversations()
   const savedId = localStorage.getItem('chat-conversation-id')
   if (savedId && conversations.value.some(c => c.conversationId === savedId)) {
@@ -241,23 +219,6 @@ onBeforeUnmount(() => {
   abortStream()
   if (flushTimer != null) window.clearTimeout(flushTimer)
 })
-
-async function loadAgents() {
-  try {
-    const list = await listAgentConfigs()
-    agents.value = (list || []).filter(a => a.enabled !== false)
-  } catch {
-    agents.value = [] // 加载失败则隐藏选择器，不影响基础对话
-  }
-}
-
-function saveAgentPref() {
-  if (selectedAgent.value) {
-    localStorage.setItem('chat-agent-name', selectedAgent.value)
-  } else {
-    localStorage.removeItem('chat-agent-name')
-  }
-}
 
 async function loadConversations() {
   try {
@@ -410,7 +371,7 @@ async function doSend(text: string) {
   try {
     result = await chatApi.stream(
       text,
-      { conversationId: currentConversationId.value, agentName: selectedAgent.value || undefined },
+      { conversationId: currentConversationId.value },
       {
         onChunk(chunk: string) {
           queueChunk(chunk)
@@ -528,10 +489,6 @@ function copyMessage(msg: UiMessage) {
   }).catch(() => {
     ElMessage.error('复制失败，请手动选择复制')
   })
-}
-
-function goPersonalConfig() {
-  router.push('/personal-config')
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -1083,27 +1040,6 @@ watch(messageListRef, (el) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.input-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.agent-select {
-  width: 200px;
-}
-
-.agent-option-desc {
-  float: right;
-  font-size: 12px;
-  color: var(--ink-text-secondary);
-}
-
-.agent-hint {
-  font-size: 12px;
-  color: var(--ink-text-secondary);
 }
 
 .chat-textarea {

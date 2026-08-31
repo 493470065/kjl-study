@@ -602,7 +602,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowRight, ArrowDown, ArrowUp, Loading } from '@element-plus/icons-vue'
 import http from '@/api/http'
-import { getConfigMap } from '@/api/systemConfig'
+// tfsServerUrl 使用 DEFAULT_TFS_URL 常量，原 system_configs 读取已移除
 import {
   automateApi,
   taskTypeApi,
@@ -659,16 +659,7 @@ function getWorkItemUrl(workItemId: number | string) {
   return `${tfsServerUrl.value}/_workitems/edit/${workItemId}`
 }
 
-async function loadTfsServerUrl() {
-  try {
-    const configMap = await getConfigMap()
-    if (configMap['tfs.serverUrl']) {
-      tfsServerUrl.value = configMap['tfs.serverUrl']
-    }
-  } catch {
-    // fallback to default
-  }
-}
+// tfsServerUrl 使用 DEFAULT_TFS_URL 常量，原 system_configs 读取已移除
 
 // ======================== Table & list ========================
 const automates = ref<AutomateTask[]>([])
@@ -1685,7 +1676,6 @@ onMounted(() => {
   loadAutomates()
   loadWorkflows()
   loadTaskTypes()
-  loadTfsServerUrl()
   startTableAutoRefresh()
 
   // 深链支持：/automate?workItemId=12345（从需求看板一键跳入时预填需求号）

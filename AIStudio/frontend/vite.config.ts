@@ -12,6 +12,8 @@ export default defineConfig({
   server: {
     port: 8090,
     host: true,
+    // 允许同网段同事通过本机局域网 IP 访问（否则 Vite 会 403 拦截非 localhost 的 Host）
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8091',

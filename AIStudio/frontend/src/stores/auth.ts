@@ -16,9 +16,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'ADMIN')
 
+  /** 对所有登录用户开放的功能菜单（不依赖后端 allowedMenus 配置） */
+  const PUBLIC_MENUS = ['/todos']
+
   function hasMenuAccess(path: string): boolean {
     if (!user.value) return false
     if (user.value.role === 'ADMIN') return true
+    if (PUBLIC_MENUS.includes(path)) return true
     const menus = user.value.allowedMenus
     if (!menus) return false
     if (menus === '*' || (Array.isArray(menus) && menus.includes('*'))) return true
@@ -29,7 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
   /** 登录落地页：按菜单优先级取第一个可访问页面，避免无 /chat 权限的用户死循环 */
   const MENU_ORDER = [
     '/chat', '/requirements', '/knowledge', '/skills', '/agents',
-    '/workflows', '/automate', '/mcp', '/providers', '/monitor', '/settings'
+    '/workflows', '/automate', '/mcp', '/providers', '/monitor'
   ]
   function firstAccessibleMenu(): string {
     for (const p of MENU_ORDER) {

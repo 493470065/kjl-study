@@ -18,6 +18,7 @@ import java.io.PushbackInputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * TFS 桥接：需求看板 /api/tfs/*。返回透传 MCP 工具 JSON（与 formatWorkItem 对齐，前端零改动）。
@@ -37,6 +38,11 @@ public class TfsBridgeController {
     private record StatusCache(long ts, Map<String, Object> body) {}
     private volatile StatusCache statusCache;
     private static final long STATUS_TTL_MS = 60_000L;
+
+    /** query / following 结果缓存：避免切 Tab/刷新/重进重复查 TFS（单次 4~12s），120s TTL */
+    private record QueryCache(long ts, JsonNode body) {}
+    private final ConcurrentHashMap<String, QueryCache> queryCache = new ConcurrentHashMap<>();
+    private static final long QUERY_TTL_MS = 120_000L;
 
     public TfsBridgeController(TfsBridgeService bridge, ObjectMapper objectMapper, RestTemplate restTemplate) {
         this.bridge = bridge;
@@ -73,15 +79,38 @@ public class TfsBridgeController {
         }
     }
 
-    // ---------- 3) query：两个 Tab 共用 ----------
+    // ---------- 3) query：两个 Tab 共用（带 120s 结果缓存）----------
     @GetMapping("/query")
     public ResponseEntity<JsonNode> query(@RequestParam String queryId,
                                           @RequestParam(required = false) String project) {
+        String cacheKey = "query:" + queryId + "|" + (project == null ? "" : project);
+        QueryCache c = queryCache.get(cacheKey);
+        if (c != null && System.currentTimeMillis() - c.ts < QUERY_TTL_MS) {
+            return ResponseEntity.ok(c.body);
+        }
         try {
             Map<String, Object> args = new LinkedHashMap<>();
             args.put("queryId", queryId);   // UUID 含横线，不会被参数清洗误转数值
             if (project != null && !project.isBlank()) args.put("project", project);
-            return ResponseEntity.ok(bridge.callToolJson("run_stored_query", args)); // 数组透传
+            JsonNode body = bridge.callToolJson("run_stored_query", args); // 数组透传
+            queryCache.put(cacheKey, new QueryCache(System.currentTimeMillis(), body));
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            return error(502, e);
+        }
+    }
+
+    // ---------- 3.5) following：当前 PAT 账号关注的工作项（跨项目，带 120s 缓存）----------
+    @GetMapping("/following")
+    public ResponseEntity<JsonNode> following() {
+        QueryCache c = queryCache.get("following");
+        if (c != null && System.currentTimeMillis() - c.ts < QUERY_TTL_MS) {
+            return ResponseEntity.ok(c.body);
+        }
+        try {
+            JsonNode body = bridge.callToolJson("following", Map.of());
+            queryCache.put("following", new QueryCache(System.currentTimeMillis(), body));
+            return ResponseEntity.ok(body);
         } catch (Exception e) {
             return error(502, e);
         }

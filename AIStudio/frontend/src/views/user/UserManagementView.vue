@@ -178,9 +178,10 @@ import { formatDateTime } from '@/utils/format'
 const activeTab = ref('users')
 
 const menuOptions = [
-  { label: '首页', path: '/' },
+  { label: '首页', path: '/dashboard' },
   { label: 'AI 对话', path: '/chat' },
   { label: '需求看板', path: '/requirements' },
+  { label: 'TFS 看板', path: '/tfs-dashboard' },
   { label: '知识库', path: '/knowledge' },
   { label: 'MCP 管理', path: '/mcp' },
   { label: '自动化管理', path: '/automate' },
@@ -192,8 +193,6 @@ const menuOptions = [
   { label: '账户管理', path: '/users', group: 'system-config' },
   { label: '仓库管理', path: '/repository', group: 'system-config' },
   { label: '定时任务', path: '/scheduled-tasks', group: 'system-config' },
-  { label: '系统配置', path: '/settings', group: 'system-config' },
-  { label: '个人配置', path: '/personal-config' },
   { label: '审计日志', path: '/audit' },
   { label: '团队协作', path: '/team' },
   { label: 'LLM Provider', path: '/providers' },
@@ -211,7 +210,7 @@ const groupedMenuOptions = computed(() => {
     }
   }
   if (groupItems.length > 0) {
-    result.push({ label: '系统配置', path: '', isGroupHeader: true })
+    result.push({ label: '系统管理', path: '', isGroupHeader: true })
     result.push(...groupItems)
   }
   return result

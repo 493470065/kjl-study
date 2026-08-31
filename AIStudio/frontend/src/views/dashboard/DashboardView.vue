@@ -298,7 +298,7 @@ import {
   getWorkloadDetails, getExceptionDetails, fixException,
   type WorkloadData, type ExceptionData, type WeeklyData, type DailyData
 } from '@/api/tfsStats'
-import { getConfigMap } from '@/api/systemConfig'
+// tfsServerUrl 使用 DEFAULT_TFS_URL 常量，原 system_configs 读取已移除
 import { agentApi } from '@/api/agent'
 import http from '@/api/http'
 import { useRouter } from 'vue-router'
@@ -406,16 +406,7 @@ function getWorkItemUrl(workItemId: number | string) {
   return `${tfsServerUrl.value}/_workitems/edit/${workItemId}`
 }
 
-async function loadTfsServerUrl() {
-  try {
-    const configMap = await getConfigMap()
-    if (configMap['tfs.serverUrl']) {
-      tfsServerUrl.value = configMap['tfs.serverUrl']
-    }
-  } catch {
-    // fallback to default
-  }
-}
+// tfsServerUrl 使用 DEFAULT_TFS_URL 常量，原 system_configs 读取已移除
 
 async function loadTfsData() {
   tfsLoading.value = true
@@ -630,7 +621,6 @@ async function loadHealth() {
 
 onMounted(async () => {
   loadTfsData()
-  loadTfsServerUrl()
   loadHealth()
   agentsLoading.value = true
   try {

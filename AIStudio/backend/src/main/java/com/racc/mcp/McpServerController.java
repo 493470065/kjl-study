@@ -93,6 +93,35 @@ public class McpServerController {
         return ResponseEntity.ok(service.getServerTools(id));
     }
 
+    /**
+     * 通用工具调用：按 serverId + toolName + 参数调用 MCP 工具，返回解析后的 JSON。
+     * 供需求看板等页面「配置 MCP 数据源」后取数使用；非 JSON 结果返回 {"raw": "..."}。
+     * body: { "toolName": "xxx", "arguments": { ... } }
+     */
+    @PostMapping("/{id}/call")
+    public ResponseEntity<?> callTool(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        Object rawName = body == null ? null : body.get("toolName");
+        String toolName = rawName == null ? "" : String.valueOf(rawName).trim();
+        if (toolName.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "toolName 不能为空"));
+        }
+        Map<String, Object> args;
+        Object rawArgs = body == null ? null : body.get("arguments");
+        if (rawArgs instanceof Map<?, ?> m) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) m;
+            args = typed;
+        } else {
+            args = Map.of();
+        }
+        try {
+            return ResponseEntity.ok(service.callToolJson(id, toolName, args));
+        } catch (RuntimeException e) {
+            String msg = e.getMessage() == null ? "MCP 工具调用失败" : e.getMessage();
+            return ResponseEntity.status(502).body(Map.of("error", msg));
+        }
+    }
+
     /** 连通性测试：真实拉起进程做 MCP 握手 + tools/list */
     @PostMapping("/{id}/test")
     public ResponseEntity<Map<String, Object>> testConnection(@PathVariable Long id) {

@@ -2,8 +2,6 @@ package com.racc.sandbox;
 
 import com.racc.audit.AuditTaskExecutionRepository;
 import com.racc.audit.entity.AuditTaskExecutionEntity;
-import com.racc.systemconfig.SystemConfigService;
-import com.racc.systemconfig.entity.SystemConfigEntity;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,14 +42,12 @@ public class SandboxService {
     private final AuditTaskExecutionRepository auditRepo;
     private final LocalSandboxExecutor localExecutor;
     private final DockerSandboxExecutor dockerExecutor;
-    private final SystemConfigService systemConfigService;
-
-    /** 运行时开关在 system_configs 表的分组与键（DB 优先，缺省回退 application.yml） */
-    private static final String CONFIG_GROUP = "sandbox";
-    private static final String CONFIG_KEY_ENABLED = "enabled";
 
     @Value("${racc.sandbox.enabled:true}")
     private boolean sandboxEnabled;
+
+    /** 运行时开关有效值：初始化取自 application.yml 的 racc.sandbox.enabled，运行时可经 /api/sandbox/config 切换（内存态，重启回退 yml） */
+    private volatile boolean effectiveSandboxEnabled = true;
 
     @Value("${racc.sandbox.dir:data/sandbox}")
     private String sandboxDir;
@@ -73,14 +69,12 @@ public class SandboxService {
                           SandboxExecutionRepository execRepo,
                           AuditTaskExecutionRepository auditRepo,
                           LocalSandboxExecutor localExecutor,
-                          DockerSandboxExecutor dockerExecutor,
-                          SystemConfigService systemConfigService) {
+                          DockerSandboxExecutor dockerExecutor) {
         this.sandboxRepo = sandboxRepo;
         this.execRepo = execRepo;
         this.auditRepo = auditRepo;
         this.localExecutor = localExecutor;
         this.dockerExecutor = dockerExecutor;
-        this.systemConfigService = systemConfigService;
 
         AtomicInteger seq = new AtomicInteger(1);
         ThreadFactory factory = r -> {
@@ -511,6 +505,11 @@ public class SandboxService {
 
     // ========== 启动自愈 ==========
 
+    @PostConstruct
+    public void initRuntimeSwitches() {
+        this.effectiveSandboxEnabled = sandboxEnabled;
+    }
+
     /**
      * 后端重启对账：进程句柄随 JVM 消失，残留 RUNNING 执行置失败；
      * 创建中断的 CREATING 沙箱置销毁。RUNNING 沙箱保留（环境=目录，重启后仍有效）。
@@ -546,53 +545,26 @@ public class SandboxService {
     // ========== 运行时开关 ==========
 
     /**
-     * 生效的启用状态：system_configs 表 sandbox.enabled 优先（运行时可改、即时生效），
-     * 未配置时回退 application.yml 的 racc.sandbox.enabled。
+     * 生效的启用状态：取内存态开关（初始化来自 application.yml 的 racc.sandbox.enabled，
+     * 运行时可经 /api/sandbox/config 切换，重启后回退 yml）。
      */
     public boolean isEffectivelyEnabled() {
-        try {
-            String v = systemConfigService.getConfigMap(CONFIG_GROUP).get(CONFIG_KEY_ENABLED);
-            if (v != null && !v.isBlank()) {
-                return "true".equalsIgnoreCase(v.trim());
-            }
-        } catch (Exception e) {
-            log.warn("读取沙箱运行时开关失败，回退 application.yml 配置: {}", e.getMessage());
-        }
-        return sandboxEnabled;
+        return effectiveSandboxEnabled;
     }
 
-    /** 开关来源：system_configs（运行时）/ application.yml（静态） */
+    /** 开关来源：application.yml（静态）+ 内存运行时覆盖 */
     private String enabledSource() {
-        try {
-            String v = systemConfigService.getConfigMap(CONFIG_GROUP).get(CONFIG_KEY_ENABLED);
-            if (v != null && !v.isBlank()) {
-                return "system_configs";
-            }
-        } catch (Exception ignored) {
-            // 回退来源即 application.yml
-        }
         return "application.yml";
     }
 
-    /** 设置运行时开关：upsert system_configs 表（group=sandbox, key=enabled），无需重启 */
+    /** 设置运行时开关（内存态，即时生效，重启后回退 application.yml） */
     @Transactional
     public void setRuntimeEnabled(boolean enabled) {
-        SystemConfigEntity existing = systemConfigService.listByGroup(CONFIG_GROUP).stream()
-                .filter(c -> CONFIG_KEY_ENABLED.equals(c.getConfigKey()))
-                .findFirst()
-                .orElse(null);
-        if (existing == null) {
-            existing = new SystemConfigEntity();
-            existing.setConfigGroup(CONFIG_GROUP);
-            existing.setConfigKey(CONFIG_KEY_ENABLED);
-            existing.setDescription("沙箱功能总开关（运行时配置，优先于 application.yml）");
-        }
-        existing.setConfigValue(String.valueOf(enabled));
-        systemConfigService.save(existing);
-        log.info("沙箱运行时开关已更新: enabled={}", enabled);
+        this.effectiveSandboxEnabled = enabled;
+        log.info("沙箱运行时开关已更新（内存态）: enabled={}", enabled);
     }
 
-    /** 设置 Docker 引擎运行时开关（委托执行器：写 system_configs + 失效探测缓存），无需重启 */
+    /** 设置 Docker 引擎运行时开关（委托执行器） */
     @Transactional
     public void setDockerRuntimeEnabled(boolean enabled) {
         dockerExecutor.setRuntimeEnabled(enabled);
