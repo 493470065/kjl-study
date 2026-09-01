@@ -8,26 +8,28 @@
       <el-menu :default-active="activeMenu" router :default-openeds="systemSubMenuOpen"
           :collapse="sidebarCollapsed" :collapse-transition="false"
           background-color="transparent" text-color="#d8d2c2" active-text-color="var(--paper)">
-        <!-- 工作台：用户每天打开处理事务的入口 -->
-        <el-menu-item-group v-if="anyAccess(['/chat', '/requirements', '/todos'])">
-          <template #title><el-divider class="menu-group-divider" /></template>
+        <!-- 分组在 UED 提案 §2.2 基础上定制（2026-09-01 定稿：工作台/AI 能力/AI 配置 三组）；
+             「质量与观测」「系统管理」分组待相应页面开放时启用 -->
+        <!-- 工作台：每天打开处理事务的入口 -->
+        <el-menu-item-group v-if="anyAccess(['/chat', '/todos', '/requirements'])">
+          <template #title><span class="menu-group-title">工作台</span></template>
           <el-menu-item v-if="auth.hasMenuAccess('/chat')" index="/chat">
             <el-icon><ChatDotRound /></el-icon>
             <span>AI 对话</span>
           </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/requirements')" index="/requirements">
-            <el-icon><Document /></el-icon>
-            <span>需求看板</span>
-          </el-menu-item>
           <el-menu-item v-if="auth.hasMenuAccess('/todos')" index="/todos">
-            <el-icon><Bell /></el-icon>
+            <el-icon><CircleCheck /></el-icon>
             <span>待办事项</span>
+          </el-menu-item>
+          <el-menu-item v-if="auth.hasMenuAccess('/requirements')" index="/requirements">
+            <el-icon><DataBoard /></el-icon>
+            <span>需求看板</span>
           </el-menu-item>
         </el-menu-item-group>
 
-        <!-- 智能资产：平台沉淀的可复用 AI 能力 -->
-        <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents'])">
-          <template #title><el-divider class="menu-group-divider" /></template>
+        <!-- AI 能力：沉淀可复用的能力并编排执行（定时任务/Webhook 开放后收编于此） -->
+        <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents', '/workflows', '/automate'])">
+          <template #title><span class="menu-group-title">AI 能力</span></template>
           <el-menu-item v-if="auth.hasMenuAccess('/knowledge')" index="/knowledge">
             <el-icon><Collection /></el-icon>
             <span>知识库</span>
@@ -40,35 +42,30 @@
             <el-icon><User /></el-icon>
             <span>Agent 管理</span>
           </el-menu-item>
-        </el-menu-item-group>
-
-        <!-- 自动化编排：把能力串联并落地执行 -->
-        <el-menu-item-group v-if="anyAccess(['/workflows', '/automate', '/sandbox'])">
-          <template #title><el-divider class="menu-group-divider" /></template>
           <el-menu-item v-if="auth.hasMenuAccess('/workflows')" index="/workflows">
-            <el-icon><Share /></el-icon>
+            <el-icon><SetUp /></el-icon>
             <span>工作流编排</span>
           </el-menu-item>
           <el-menu-item v-if="auth.hasMenuAccess('/automate')" index="/automate">
-            <el-icon><List /></el-icon>
+            <el-icon><Operation /></el-icon>
             <span>自动化管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/sandbox')" index="/sandbox">
-            <el-icon><Box /></el-icon>
-            <span>沙箱管理</span>
           </el-menu-item>
         </el-menu-item-group>
 
-        <!-- 集成与基座：对外连接与模型底座（MCP 连接 + LLM 基座） -->
-        <el-menu-item-group v-if="anyAccess(['/mcp', '/providers'])">
-          <template #title><el-divider class="menu-group-divider" /></template>
+        <!-- AI 配置：对外连接与运行基座（提案：本地算力、沙箱收编于此） -->
+        <el-menu-item-group v-if="anyAccess(['/providers', '/mcp', '/sandbox'])">
+          <template #title><span class="menu-group-title">AI 配置</span></template>
+          <el-menu-item v-if="auth.hasMenuAccess('/providers')" index="/providers">
+            <el-icon><Cpu /></el-icon>
+            <span>LLM 管理</span>
+          </el-menu-item>
           <el-menu-item v-if="auth.hasMenuAccess('/mcp')" index="/mcp">
             <el-icon><Connection /></el-icon>
             <span>MCP 管理</span>
           </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/providers')" index="/providers">
-            <el-icon><Cpu /></el-icon>
-            <span>LLM 管理</span>
+          <el-menu-item v-if="auth.hasMenuAccess('/sandbox')" index="/sandbox">
+            <el-icon><Box /></el-icon>
+            <span>沙箱管理</span>
           </el-menu-item>
         </el-menu-item-group>
 
@@ -162,7 +159,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { HomeFilled, ChatDotRound, Document, Collection, Connection, List, User, Monitor, Setting, DataLine, OfficeBuilding, Cpu, Files, Key, Share, DataAnalysis, ArrowDown, Lock, SwitchButton, Fold, Expand, Clock, Link, Box, Bell } from '@element-plus/icons-vue'
+import { ChatDotRound, CircleCheck, DataBoard, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 
@@ -377,7 +374,11 @@ body {
   background-color: transparent !important;
 }
 
-/* 折叠态：窄栏图标菜单 */
+/* 折叠态：窄栏图标菜单（文字隐去，只留图标） */
+.el-aside.collapsed .el-menu-item > span {
+  display: none;
+}
+
 .el-aside.collapsed .el-menu-item {
   margin: 2px 6px;
   width: calc(100% - 12px);
@@ -466,22 +467,32 @@ body {
   background-color: var(--ink-light) !important;
 }
 
-/* 菜单分组：不再显示中文组名，改用贯通分隔符代替 */
+/* 菜单分组：显示组名（UED 提案 §2.2） */
 .el-aside .el-menu-item-group__title {
-  padding: 6px 14px 2px;
+  padding: 14px 16px 4px;
 }
 
-.el-aside .menu-group-divider {
-  margin: 2px 0;
-  border-top: 1px solid rgba(216, 210, 194, 0.18);
+.menu-group-title {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--ink-text-on-dark);
+  opacity: .45;
 }
 
+/* 折叠态：组名隐去，以细线维持分组感 */
 .el-aside.collapsed .el-menu-item-group__title {
-  padding: 6px 0 2px;
+  padding: 6px 12px 2px;
 }
 
-.el-aside.collapsed .menu-group-divider {
-  margin: 2px 6px;
+.el-aside.collapsed .menu-group-title {
+  display: none;
+}
+
+.el-aside.collapsed .el-menu-item-group__title::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: rgba(216, 210, 194, 0.18);
 }
 
 .el-aside .el-menu-item-group {
