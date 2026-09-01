@@ -2,6 +2,7 @@ package com.racc.user.service;
 
 import com.racc.llm.entity.LlmProviderEntity;
 import com.racc.llm.repository.LlmProviderRepository;
+import com.racc.llm.service.LlmProviderUserSyncService;
 import com.racc.user.UserRepository;
 import com.racc.user.entity.UserEntity;
 import com.racc.user.entity.UserLlmConfigEntity;
@@ -24,15 +25,18 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserLlmConfigRepository llmConfigRepository;
     private final LlmProviderRepository llmProviderRepository;
+    private final LlmProviderUserSyncService providerUserSyncService;
     private final PasswordEncoder passwordEncoder;
 
     public UserService(UserRepository userRepository,
                        UserLlmConfigRepository llmConfigRepository,
                        LlmProviderRepository llmProviderRepository,
+                       LlmProviderUserSyncService providerUserSyncService,
                        PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.llmConfigRepository = llmConfigRepository;
         this.llmProviderRepository = llmProviderRepository;
+        this.providerUserSyncService = providerUserSyncService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -91,6 +95,7 @@ public class UserService {
     public Map<String, Object> updateUser(Long id, Map<String, Object> body) {
         UserEntity user = userRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("用户不存在"));
+        String oldUsername = user.getUsername();
 
         if (body.containsKey("username")) {
             String newUsername = (String) body.get("username");
@@ -131,6 +136,13 @@ public class UserService {
 
         user.setUpdatedAt(LocalDateTime.now());
         user = userRepository.save(user);
+
+        // 同步「LLM 管理」卡片用户名单：改名需迁移旧绑定，并按个人配置重建
+        if (!oldUsername.equals(user.getUsername())) {
+            providerUserSyncService.deleteBinding(oldUsername);
+        }
+        syncProviderBinding(user);
+
         return toUserInfoMap(user);
     }
 
@@ -143,8 +155,9 @@ public class UserService {
         if ("admin".equals(user.getUsername())) {
             throw new IllegalArgumentException("不能删除 admin 用户");
         }
-        // 同时删除关联的 LLM 配置
+        // 同时删除关联的 LLM 配置与 Provider 绑定
         llmConfigRepository.findByUserId(id).ifPresent(llmConfigRepository::delete);
+        providerUserSyncService.deleteBinding(user.getUsername());
         userRepository.delete(user);
     }
 
@@ -188,6 +201,18 @@ public class UserService {
     }
 
     // ========== 内部工具 ==========
+
+    /**
+     * 按用户当前个人 LLM 配置重建其 Provider 绑定（「LLM 管理」卡片"用户"名单展示用）。
+     * 无配置时清除绑定。
+     */
+    private void syncProviderBinding(UserEntity user) {
+        llmConfigRepository.findByUserId(user.getId()).ifPresentOrElse(config ->
+                providerUserSyncService.syncBinding(user.getUsername(), user.getDisplayName(),
+                        config.getProviderId(), config.getModelName(),
+                        Boolean.TRUE.equals(config.getEnabled()) && Boolean.TRUE.equals(user.getEnabled())),
+                () -> providerUserSyncService.deleteBinding(user.getUsername()));
+    }
 
     /**
      * 将 UserEntity 转换为前端所需的 UserInfo 格式。

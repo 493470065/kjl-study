@@ -1,5 +1,7 @@
 package com.racc.userconfig.service;
 
+import com.racc.llm.service.LlmProviderUserSyncService;
+import com.racc.user.UserRepository;
 import com.racc.user.entity.UserLlmConfigEntity;
 import com.racc.user.repository.UserLlmConfigRepository;
 import com.racc.userconfig.entity.UserTfsConfigEntity;
@@ -20,11 +22,17 @@ public class UserConfigService {
 
     private final UserLlmConfigRepository llmConfigRepository;
     private final UserTfsConfigRepository tfsConfigRepository;
+    private final UserRepository userRepository;
+    private final LlmProviderUserSyncService providerUserSyncService;
 
     public UserConfigService(UserLlmConfigRepository llmConfigRepository,
-                             UserTfsConfigRepository tfsConfigRepository) {
+                             UserTfsConfigRepository tfsConfigRepository,
+                             UserRepository userRepository,
+                             LlmProviderUserSyncService providerUserSyncService) {
         this.llmConfigRepository = llmConfigRepository;
         this.tfsConfigRepository = tfsConfigRepository;
+        this.userRepository = userRepository;
+        this.providerUserSyncService = providerUserSyncService;
     }
 
     // ========== LLM 配置 ==========
@@ -68,6 +76,12 @@ public class UserConfigService {
         }
         config.setUpdatedAt(LocalDateTime.now());
         llmConfigRepository.save(config);
+
+        // 同步「LLM 管理」卡片的用户名单：以最新个人配置重建该用户的 Provider 绑定
+        userRepository.findById(userId).ifPresent(user ->
+                providerUserSyncService.syncBinding(user.getUsername(), user.getDisplayName(),
+                        config.getProviderId(), config.getModelName(),
+                        Boolean.TRUE.equals(config.getEnabled()) && Boolean.TRUE.equals(user.getEnabled())));
     }
 
     // ========== TFS 配置 ==========
