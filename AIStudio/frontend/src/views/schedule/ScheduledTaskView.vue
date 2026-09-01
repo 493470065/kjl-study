@@ -110,9 +110,8 @@
         <el-form-item label="任务名称">
           <span>{{ cronForm.name }}</span>
         </el-form-item>
-        <el-form-item label="Cron 表达式">
-          <el-input v-model="cronForm.cronExpression" placeholder="0 0 * * * ?" />
-          <div class="cron-hint">常用: <code>0 0 * * * ?</code> 每小时, <code>0 */30 * * * ?</code> 每30分钟</div>
+        <el-form-item label="执行时间">
+          <SchedulePicker v-model="cronForm.cronExpression" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -136,10 +135,8 @@
         <el-form-item label="描述">
           <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="任务用途说明（可选）" />
         </el-form-item>
-        <el-form-item label="Cron 表达式" required>
-          <el-input v-model="createForm.cronExpression" placeholder="0 0 * * * ?" />
-          <div class="cron-hint">Spring Cron（6 位）: <code>0 0 * * * ?</code> 每小时,
-            <code>0 */30 * * * ?</code> 每30分钟, <code>0 0 2 * * ?</code> 每天凌晨2点</div>
+        <el-form-item label="执行时间" required>
+          <SchedulePicker v-model="createForm.cronExpression" />
         </el-form-item>
         <el-form-item label="执行参数">
           <el-input v-model="createForm.paramsJson" type="textarea" :rows="3"
@@ -164,6 +161,7 @@ import { ElMessage } from 'element-plus'
 import { Refresh, Plus } from '@element-plus/icons-vue'
 import { useStatusTag } from '@/composables/useStatusTag'
 import { useConfirmDelete } from '@/composables/useConfirmDelete'
+import SchedulePicker from './components/SchedulePicker.vue'
 import { taskTypeApi, type AutomateTaskType } from '@/api/automate'
 import {
   listTasks, createTask, updateTask, triggerTask, deleteTask, listLogs, getCacheStatus,

@@ -62,3 +62,8 @@ export function listLogs(taskKey?: string) {
 export function getCacheStatus() {
   return http.get<CacheStatus>('/scheduled-tasks/cache-status').then(r => r.data)
 }
+
+/** Cron 预览：校验表达式并返回接下来 3 次执行时间（"MM-dd HH:mm"） */
+export function previewCron(cron: string) {
+  return http.post<{ next: string[] }>('/scheduled-tasks/cron-preview', { cron }).then(r => r.data)
+}

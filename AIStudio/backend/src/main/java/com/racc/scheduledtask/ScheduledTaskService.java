@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -194,6 +195,27 @@ public class ScheduledTaskService {
     }
 
     // ========== 执行日志 ==========
+
+    /**
+     * Cron 预览：校验表达式并返回接下来 3 次的执行时间点（供前端"下次执行时间"提示）。
+     */
+    public List<String> previewCron(String cron) {
+        CronExpression expr;
+        try {
+            expr = CronExpression.parse(cron == null ? "" : cron.trim());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Cron 表达式不合法: " + e.getMessage());
+        }
+        List<String> next = new java.util.ArrayList<>();
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+        LocalDateTime t = LocalDateTime.now();
+        for (int i = 0; i < 3; i++) {
+            t = expr.next(t);
+            if (t == null) break;
+            next.add(t.format(fmt));
+        }
+        return next;
+    }
 
     public List<TaskLogEntity> listLogs(String taskKey) {
         if (taskKey != null && !taskKey.isBlank()) {

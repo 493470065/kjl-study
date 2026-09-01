@@ -72,4 +72,14 @@ public class ScheduledTaskController {
     public ResponseEntity<Map<String, Object>> getCacheStatus() {
         return ResponseEntity.ok(service.getCacheStatus());
     }
+
+    /** Cron 预览：校验表达式并返回接下来 3 次执行时间 */
+    @PostMapping("/cron-preview")
+    public ResponseEntity<?> previewCron(@RequestBody Map<String, String> body) {
+        try {
+            return ResponseEntity.ok(Map.of("next", service.previewCron(body.get("cron"))));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }
