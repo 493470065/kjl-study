@@ -124,22 +124,11 @@
     <!-- 新建任务弹窗 -->
     <el-dialog v-model="createDialogVisible" title="新建定时任务" width="520px">
       <el-form :model="createForm" label-width="100px">
-        <el-form-item label="执行方式">
-          <el-radio-group v-model="createForm.mode">
-            <el-radio value="placeholder">占位（空跑）</el-radio>
-            <el-radio value="automate">自动化任务</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="createForm.mode === 'automate'" label="任务类型" required>
+        <el-form-item label="任务类型" required>
           <el-select v-model="createForm.typeCode" placeholder="选择自动化管理中已启用的任务类型" style="width: 100%">
             <el-option v-for="t in taskTypes" :key="t.code" :label="`${t.name}（${t.code}）`" :value="t.code" />
           </el-select>
           <div class="cron-hint">任务标识自动生成为 <code>automate:{{ createForm.typeCode || '<code>' }}</code>；每次触发会发起一次该类型的自动化执行，进度到自动化管理查看</div>
-        </el-form-item>
-        <el-form-item v-else label="任务标识" required>
-          <el-input v-model="createForm.taskKey" placeholder="如 cache-refresh，唯一键，创建后不可改"
-                    :disabled="createForm.editing" />
-          <div class="cron-hint">仅允许字母、数字、下划线、中划线；占位任务仅记录调度日志，不执行实际逻辑</div>
         </el-form-item>
         <el-form-item label="任务名称" required>
           <el-input v-model="createForm.name" placeholder="如 数据缓存刷新" />
@@ -152,10 +141,10 @@
           <div class="cron-hint">Spring Cron（6 位）: <code>0 0 * * * ?</code> 每小时,
             <code>0 */30 * * * ?</code> 每30分钟, <code>0 0 2 * * ?</code> 每天凌晨2点</div>
         </el-form-item>
-        <el-form-item v-if="createForm.mode === 'automate'" label="执行参数">
+        <el-form-item label="执行参数">
           <el-input v-model="createForm.paramsJson" type="textarea" :rows="3"
                     placeholder='JSON 对象，字段由所选任务类型的表单定义；如 {"tfsWorkItemId": 123}' />
-          <div class="cron-hint">留空表示无参数；自动化任务若类型必填参数缺集会执行失败并在日志中提示</div>
+          <div class="cron-hint">留空表示无参数；任务类型必填参数缺集会执行失败并在日志中提示</div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="createForm.enabled" />
@@ -208,9 +197,8 @@ const createDialogVisible = ref(false)
 const creating = ref(false)
 const taskTypes = ref<AutomateTaskType[]>([])
 const defaultCreateForm = () => ({
-  mode: 'placeholder' as 'placeholder' | 'automate',
   typeCode: '', paramsJson: '',
-  taskKey: '', name: '', description: '', cronExpression: '', enabled: true
+  name: '', description: '', cronExpression: '', enabled: true
 })
 const createForm = ref(defaultCreateForm())
 
@@ -224,19 +212,9 @@ async function openCreateDialog() {
 
 async function handleCreate() {
   const f = createForm.value
-  const isAutomate = f.mode === 'automate'
-  let taskKey: string
-  if (isAutomate) {
-    if (!f.typeCode) { ElMessage.error('请选择自动化任务类型'); return }
-    taskKey = `automate:${f.typeCode}`
-  } else {
-    taskKey = f.taskKey.trim()
-    if (!/^[A-Za-z0-9_-]+$/.test(taskKey)) {
-      ElMessage.error('任务标识仅允许字母、数字、下划线、中划线')
-      return
-    }
-  }
-  const paramsJson = isAutomate ? f.paramsJson.trim() : ''
+  if (!f.typeCode) { ElMessage.error('请选择自动化任务类型'); return }
+  const taskKey = `automate:${f.typeCode}`
+  const paramsJson = f.paramsJson.trim()
   if (paramsJson) {
     try {
       const parsed = JSON.parse(paramsJson)

@@ -77,8 +77,9 @@ public class ScheduledTaskService {
     @Transactional
     public ScheduledTaskEntity createTask(Map<String, Object> body) {
         String taskKey = trimOrNull((String) body.get("taskKey"));
-        if (taskKey == null || !taskKey.matches("[A-Za-z0-9_:-]+")) {
-            throw new IllegalArgumentException("任务标识仅允许字母、数字、下划线、中划线、冒号（automate:<code> 约定）");
+        if (taskKey == null || !taskKey.startsWith(AUTOMATE_PREFIX)
+                || !taskKey.substring(AUTOMATE_PREFIX.length()).matches("[A-Za-z0-9_-]+")) {
+            throw new IllegalArgumentException("任务标识须为 automate:<自动化任务类型code>，如 automate:req-analysis");
         }
         if (taskRepository.findByTaskKey(taskKey).isPresent()) {
             throw new IllegalArgumentException("任务标识已存在: " + taskKey);
