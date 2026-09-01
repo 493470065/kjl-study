@@ -24,9 +24,7 @@
           </el-table-column>
           <el-table-column label="上次状态" width="100">
             <template #default="{ row }">
-              <el-tag v-if="row.lastStatus" :type="row.lastStatus === 'SUCCESS' ? 'success' : 'danger'" size="small">
-                {{ row.lastStatus === 'SUCCESS' ? '成功' : '失败' }}
-              </el-tag>
+              <el-tag v-if="row.lastStatus" :type="statusType(row.lastStatus)" size="small">{{ statusLabel(row.lastStatus) }}</el-tag>
               <span v-else class="text-muted">-</span>
             </template>
           </el-table-column>
@@ -38,10 +36,11 @@
               <span v-else class="text-muted">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right">
+          <el-table-column label="操作" width="160" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" size="small" @click="handleTrigger(row)" :loading="triggeringId === row.id">执行</el-button>
               <el-button link type="primary" size="small" @click="handleEditCron(row)">编辑</el-button>
+              <el-button link type="danger" size="small" @click="handleDeleteTask(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -125,10 +124,22 @@
     <!-- 新建任务弹窗 -->
     <el-dialog v-model="createDialogVisible" title="新建定时任务" width="520px">
       <el-form :model="createForm" label-width="100px">
-        <el-form-item label="任务标识" required>
+        <el-form-item label="执行方式">
+          <el-radio-group v-model="createForm.mode">
+            <el-radio value="placeholder">占位（空跑）</el-radio>
+            <el-radio value="automate">自动化任务</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="createForm.mode === 'automate'" label="任务类型" required>
+          <el-select v-model="createForm.typeCode" placeholder="选择自动化管理中已启用的任务类型" style="width: 100%">
+            <el-option v-for="t in taskTypes" :key="t.code" :label="`${t.name}（${t.code}）`" :value="t.code" />
+          </el-select>
+          <div class="cron-hint">任务标识自动生成为 <code>automate:{{ createForm.typeCode || '<code>' }}</code>；每次触发会发起一次该类型的自动化执行，进度到自动化管理查看</div>
+        </el-form-item>
+        <el-form-item v-else label="任务标识" required>
           <el-input v-model="createForm.taskKey" placeholder="如 cache-refresh，唯一键，创建后不可改"
                     :disabled="createForm.editing" />
-          <div class="cron-hint">仅允许字母、数字、下划线、中划线；需与后端任务 Bean 对应才能实际执行</div>
+          <div class="cron-hint">仅允许字母、数字、下划线、中划线；占位任务仅记录调度日志，不执行实际逻辑</div>
         </el-form-item>
         <el-form-item label="任务名称" required>
           <el-input v-model="createForm.name" placeholder="如 数据缓存刷新" />
@@ -140,6 +151,11 @@
           <el-input v-model="createForm.cronExpression" placeholder="0 0 * * * ?" />
           <div class="cron-hint">Spring Cron（6 位）: <code>0 0 * * * ?</code> 每小时,
             <code>0 */30 * * * ?</code> 每30分钟, <code>0 0 2 * * ?</code> 每天凌晨2点</div>
+        </el-form-item>
+        <el-form-item v-if="createForm.mode === 'automate'" label="执行参数">
+          <el-input v-model="createForm.paramsJson" type="textarea" :rows="3"
+                    placeholder='JSON 对象，字段由所选任务类型的表单定义；如 {"tfsWorkItemId": 123}' />
+          <div class="cron-hint">留空表示无参数；自动化任务若类型必填参数缺集会执行失败并在日志中提示</div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="createForm.enabled" />
@@ -158,11 +174,15 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Plus } from '@element-plus/icons-vue'
 import { useStatusTag } from '@/composables/useStatusTag'
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
+import { taskTypeApi, type AutomateTaskType } from '@/api/automate'
 import {
-  listTasks, createTask, updateTask, triggerTask, listLogs, getCacheStatus,
+  listTasks, createTask, updateTask, triggerTask, deleteTask, listLogs, getCacheStatus,
   type ScheduledTask, type TaskLog, type CacheStatus
 } from '@/api/scheduledTasks'
 import { formatDateTime } from '@/utils/format'
+
+const { confirmDelete } = useConfirmDelete()
 
 const activeTab = ref('tasks')
 const loading = ref(false)
@@ -186,35 +206,68 @@ const cronForm = ref({ id: 0, name: '', cronExpression: '' })
 // 新建任务
 const createDialogVisible = ref(false)
 const creating = ref(false)
+const taskTypes = ref<AutomateTaskType[]>([])
 const defaultCreateForm = () => ({
+  mode: 'placeholder' as 'placeholder' | 'automate',
+  typeCode: '', paramsJson: '',
   taskKey: '', name: '', description: '', cronExpression: '', enabled: true
 })
 const createForm = ref(defaultCreateForm())
 
-function openCreateDialog() {
+async function openCreateDialog() {
   createForm.value = defaultCreateForm()
   createDialogVisible.value = true
+  if (taskTypes.value.length === 0) {
+    try { taskTypes.value = await taskTypeApi.list(true) } catch { /* 类型列表加载失败时下拉为空 */ }
+  }
 }
 
 async function handleCreate() {
-  const key = createForm.value.taskKey.trim()
-  if (!/^[A-Za-z0-9_-]+$/.test(key)) {
-    ElMessage.error('任务标识仅允许字母、数字、下划线、中划线')
-    return
+  const f = createForm.value
+  const isAutomate = f.mode === 'automate'
+  let taskKey: string
+  if (isAutomate) {
+    if (!f.typeCode) { ElMessage.error('请选择自动化任务类型'); return }
+    taskKey = `automate:${f.typeCode}`
+  } else {
+    taskKey = f.taskKey.trim()
+    if (!/^[A-Za-z0-9_-]+$/.test(taskKey)) {
+      ElMessage.error('任务标识仅允许字母、数字、下划线、中划线')
+      return
+    }
   }
-  if (!createForm.value.name.trim()) { ElMessage.error('请填写任务名称'); return }
-  const cron = createForm.value.cronExpression.trim()
+  const paramsJson = isAutomate ? f.paramsJson.trim() : ''
+  if (paramsJson) {
+    try {
+      const parsed = JSON.parse(paramsJson)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error()
+    } catch { ElMessage.error('执行参数必须是合法的 JSON 对象'); return }
+  }
+  if (!f.name.trim()) { ElMessage.error('请填写任务名称'); return }
+  const cron = f.cronExpression.trim()
   if (!cron) { ElMessage.error('请填写 Cron 表达式'); return }
   creating.value = true
   try {
-    await createTask({ ...createForm.value, taskKey: key, cronExpression: cron })
+    await createTask({ taskKey, name: f.name.trim(), description: f.description || undefined,
+      cronExpression: cron, paramsJson: paramsJson || undefined, enabled: f.enabled })
     ElMessage.success('创建成功')
     createDialogVisible.value = false
     await loadTasks()
   } catch (e: any) {
-    ElMessage.error('创建失败: ' + (e?.response?.data?.message || e.message))
+    ElMessage.error('创建失败: ' + (e?.response?.data?.error || e.message))
   } finally {
     creating.value = false
+  }
+}
+
+async function handleDeleteTask(row: ScheduledTask) {
+  if (!await confirmDelete(`定时任务 "${row.name}"（执行记录将保留）`)) return
+  try {
+    await deleteTask(row.id)
+    ElMessage.success('已删除')
+    await loadTasks()
+  } catch (e: any) {
+    ElMessage.error('删除失败: ' + (e?.response?.data?.error || e.message))
   }
 }
 

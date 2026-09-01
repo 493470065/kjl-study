@@ -26,6 +26,10 @@ public class ScheduledTaskEntity {
     @Column(name = "cron_expression", nullable = false, length = 64)
     private String cronExpression;
 
+    /** 执行参数 JSON（taskKey 为 automate:<code> 时，作为自动化任务类型的表单参数传入） */
+    @Column(name = "params_json", columnDefinition = "LONGTEXT")
+    private String paramsJson;
+
     @Column(nullable = false)
     private Boolean enabled = true;
 
@@ -58,6 +62,9 @@ public class ScheduledTaskEntity {
 
     public String getCronExpression() { return cronExpression; }
     public void setCronExpression(String cronExpression) { this.cronExpression = cronExpression; }
+
+    public String getParamsJson() { return paramsJson; }
+    public void setParamsJson(String paramsJson) { this.paramsJson = paramsJson; }
 
     public Boolean getEnabled() { return enabled; }
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }

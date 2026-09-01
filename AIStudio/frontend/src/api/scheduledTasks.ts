@@ -6,6 +6,8 @@ export interface ScheduledTask {
   name: string
   description?: string
   cronExpression: string
+  /** 执行参数 JSON：taskKey 为 automate:<code> 时作为自动化任务表单参数 */
+  paramsJson?: string
   enabled: boolean
   lastRunTime?: string
   lastStatus?: string
@@ -37,12 +39,20 @@ export function listTasks() {
   return http.get<ScheduledTask[]>('/scheduled-tasks').then(r => r.data)
 }
 
+export function createTask(data: Partial<ScheduledTask>) {
+  return http.post<ScheduledTask>('/scheduled-tasks', data).then(r => r.data)
+}
+
 export function updateTask(id: number, data: Partial<ScheduledTask>) {
   return http.put<ScheduledTask>(`/scheduled-tasks/${id}`, data).then(r => r.data)
 }
 
 export function triggerTask(id: number) {
   return http.post<TaskLog>(`/scheduled-tasks/${id}/trigger`).then(r => r.data)
+}
+
+export function deleteTask(id: number) {
+  return http.delete(`/scheduled-tasks/${id}`).then(r => r.data)
 }
 
 export function listLogs(taskKey?: string) {

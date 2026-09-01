@@ -11,7 +11,9 @@ import java.util.Map;
 /**
  * 定时任务管理接口
  *  GET  /api/scheduled-tasks           → 任务列表
+ *  POST /api/scheduled-tasks           → 新建任务
  *  PUT  /api/scheduled-tasks/{id}      → 编辑任务（cron/启用/禁用等）
+ *  DELETE /api/scheduled-tasks/{id}    → 删除任务
  *  POST /api/scheduled-tasks/{id}/trigger → 手动触发
  *  GET  /api/scheduled-tasks/logs      → 执行记录（?taskKey=）
  *  GET  /api/scheduled-tasks/cache-status → 缓存状态
@@ -31,6 +33,15 @@ public class ScheduledTaskController {
         return ResponseEntity.ok(service.listTasks());
     }
 
+    @PostMapping
+    public ResponseEntity<?> createTask(@RequestBody Map<String, Object> body) {
+        try {
+            return ResponseEntity.ok(service.createTask(body));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<ScheduledTaskEntity> updateTask(@PathVariable Long id,
                                                            @RequestBody Map<String, Object> body) {
@@ -40,6 +51,16 @@ public class ScheduledTaskController {
     @PostMapping("/{id}/trigger")
     public ResponseEntity<TaskLogEntity> triggerTask(@PathVariable Long id) {
         return ResponseEntity.ok(service.triggerTask(id));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteTask(@PathVariable Long id) {
+        try {
+            service.deleteTask(id);
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/logs")
