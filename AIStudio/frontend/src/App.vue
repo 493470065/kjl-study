@@ -27,8 +27,8 @@
           </el-menu-item>
         </el-menu-item-group>
 
-        <!-- AI 能力：沉淀可复用的能力并编排执行（定时任务/Webhook 开放后收编于此） -->
-        <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents', '/workflows', '/automate'])">
+        <!-- AI 能力：沉淀可复用的能力并编排执行（Webhook 开放后收编于此） -->
+        <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents', '/workflows', '/automate', '/scheduled-tasks'])">
           <template #title><span class="menu-group-title">AI 能力</span></template>
           <el-menu-item v-if="auth.hasMenuAccess('/knowledge')" index="/knowledge">
             <el-icon><Collection /></el-icon>
@@ -49,6 +49,10 @@
           <el-menu-item v-if="auth.hasMenuAccess('/automate')" index="/automate">
             <el-icon><Operation /></el-icon>
             <span>自动化管理</span>
+          </el-menu-item>
+          <el-menu-item v-if="auth.hasMenuAccess('/scheduled-tasks')" index="/scheduled-tasks">
+            <el-icon><Clock /></el-icon>
+            <span>定时任务</span>
           </el-menu-item>
         </el-menu-item-group>
 
@@ -71,7 +75,7 @@
 
         <!--
           其余页面（首页、运行时监控、审计、评估、结构化输出、本地算力、团队协作、
-          运营看板、开发环境、定时任务、Webhook、产品线、仓库、账户管理、TFS 看板）
+          运营看板、开发环境、Webhook、产品线、仓库、账户管理、TFS 看板）
           维持隐藏：路由仍可直接通过 URL 访问，需要开放时在此按 hasMenuAccess 添加即可。
         -->
       </el-menu>
@@ -159,7 +163,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CircleCheck, DataBoard, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box } from '@element-plus/icons-vue'
+import { ChatDotRound, CircleCheck, DataBoard, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box, Clock } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 
