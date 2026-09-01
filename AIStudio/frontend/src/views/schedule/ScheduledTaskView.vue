@@ -1,7 +1,8 @@
 <template>
   <page-container title="定时任务" no-card>
     <template #actions>
-<el-button :icon="Refresh" @click="loadData">刷新</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建任务</el-button>
+      <el-button :icon="Refresh" @click="loadData">刷新</el-button>
     </template>
 
     <el-tabs v-model="activeTab">
@@ -120,16 +121,45 @@
         <el-button type="primary" @click="handleSaveCron" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新建任务弹窗 -->
+    <el-dialog v-model="createDialogVisible" title="新建定时任务" width="520px">
+      <el-form :model="createForm" label-width="100px">
+        <el-form-item label="任务标识" required>
+          <el-input v-model="createForm.taskKey" placeholder="如 cache-refresh，唯一键，创建后不可改"
+                    :disabled="createForm.editing" />
+          <div class="cron-hint">仅允许字母、数字、下划线、中划线；需与后端任务 Bean 对应才能实际执行</div>
+        </el-form-item>
+        <el-form-item label="任务名称" required>
+          <el-input v-model="createForm.name" placeholder="如 数据缓存刷新" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="任务用途说明（可选）" />
+        </el-form-item>
+        <el-form-item label="Cron 表达式" required>
+          <el-input v-model="createForm.cronExpression" placeholder="0 0 * * * ?" />
+          <div class="cron-hint">Spring Cron（6 位）: <code>0 0 * * * ?</code> 每小时,
+            <code>0 */30 * * * ?</code> 每30分钟, <code>0 0 2 * * ?</code> 每天凌晨2点</div>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="createForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleCreate" :loading="creating">创建</el-button>
+      </template>
+    </el-dialog>
   </page-container>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Plus } from '@element-plus/icons-vue'
 import { useStatusTag } from '@/composables/useStatusTag'
 import {
-  listTasks, updateTask, triggerTask, listLogs, getCacheStatus,
+  listTasks, createTask, updateTask, triggerTask, listLogs, getCacheStatus,
   type ScheduledTask, type TaskLog, type CacheStatus
 } from '@/api/scheduledTasks'
 import { formatDateTime } from '@/utils/format'
@@ -152,6 +182,41 @@ const triggeringId = ref<number | null>(null)
 const cronDialogVisible = ref(false)
 const saving = ref(false)
 const cronForm = ref({ id: 0, name: '', cronExpression: '' })
+
+// 新建任务
+const createDialogVisible = ref(false)
+const creating = ref(false)
+const defaultCreateForm = () => ({
+  taskKey: '', name: '', description: '', cronExpression: '', enabled: true
+})
+const createForm = ref(defaultCreateForm())
+
+function openCreateDialog() {
+  createForm.value = defaultCreateForm()
+  createDialogVisible.value = true
+}
+
+async function handleCreate() {
+  const key = createForm.value.taskKey.trim()
+  if (!/^[A-Za-z0-9_-]+$/.test(key)) {
+    ElMessage.error('任务标识仅允许字母、数字、下划线、中划线')
+    return
+  }
+  if (!createForm.value.name.trim()) { ElMessage.error('请填写任务名称'); return }
+  const cron = createForm.value.cronExpression.trim()
+  if (!cron) { ElMessage.error('请填写 Cron 表达式'); return }
+  creating.value = true
+  try {
+    await createTask({ ...createForm.value, taskKey: key, cronExpression: cron })
+    ElMessage.success('创建成功')
+    createDialogVisible.value = false
+    await loadTasks()
+  } catch (e: any) {
+    ElMessage.error('创建失败: ' + (e?.response?.data?.message || e.message))
+  } finally {
+    creating.value = false
+  }
+}
 
 async function loadData() {
   await Promise.all([loadTasks(), loadLogs(), loadCacheStatus()])
