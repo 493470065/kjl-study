@@ -177,7 +177,10 @@ onMounted(loadProviders)
 
 <style scoped>
 .providers-view { padding: 0; }
-.el-card { margin-bottom: 16px; }
+/* 等高卡片：col 作为 flex 容器，卡片拉伸填满整行高度 */
+.el-col { display: flex; flex-direction: column; margin-bottom: 16px; }
+.el-card { flex: 1; display: flex; flex-direction: column; }
+:deep(.el-card__body) { flex: 1; display: flex; flex-direction: column; }
 .default-card { border-color: #67c23a; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .provider-info { font-size: 13px; line-height: 2; color: var(--ink-text-regular); }
@@ -188,7 +191,8 @@ onMounted(loadProviders)
 .user-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .user-tag { cursor: default; }
 .user-model { color: var(--ink-text-secondary); font-size: 11px; }
-.card-actions { margin-top: 12px; display: flex; gap: 8px; }
+/* 按钮区钉到卡片底部：内容高度不同时操作行仍水平对齐 */
+.card-actions { margin-top: auto; padding-top: 12px; display: flex; gap: 8px; }
 .api-key-masked { font-family: var(--app-font-mono); font-size: 12px; color: var(--ink-text-regular); }
 .api-key-tag { margin-left: 6px; }
 .form-tip { font-size: 12px; color: var(--ink-text-secondary); line-height: 1.4; margin-top: 4px; }
