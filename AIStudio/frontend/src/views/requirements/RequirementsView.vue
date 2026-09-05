@@ -116,7 +116,7 @@
         style="cursor: pointer; margin-top: 12px"
         @row-click="showDetail"
       >
-        <!-- 列顺序：ID、标题、类型、产品名称、优先级、状态、指派人、客户名称、创建时间、操作 -->
+        <!-- 列顺序：ID、标题、类型、产品名称、优先级、状态、目标日期、超期状态、指派人、客户名称、创建时间、操作 -->
         <el-table-column prop="id" label="ID" width="100">
           <template #default="{ row }">
             <a :href="getWorkItemUrl(row.id)" target="_blank" class="id-link" @click.stop>{{ row.id }}</a>
@@ -138,6 +138,19 @@
         <el-table-column prop="state" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="stateTagColor(row.state)" size="small">{{ row.state }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="targetDate" label="目标日期" width="110">
+          <template #default="{ row }">
+            <span :class="{ 'overdue-date': overdueStatusOf(row) === 'overdue' }">{{ formatDateOnly(row.targetDate) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="超期状态" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="overdueStatusOf(row) === 'overdue'" type="danger" size="small">已超期</el-tag>
+            <el-tag v-else-if="overdueStatusOf(row) === 'dueToday'" type="warning" size="small">今日到期</el-tag>
+            <el-tag v-else-if="overdueStatusOf(row) === 'normal'" type="info" size="small">正常</el-tag>
+            <span v-else style="color: #b8b1a0">-</span>
           </template>
         </el-table-column>
         <el-table-column prop="assignedTo" label="指派人" width="120" show-overflow-tooltip />
@@ -300,6 +313,7 @@
           <el-descriptions-item label="客户名称">{{ selectedItem.customerName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="区域路径" :span="2">{{ selectedItem.areaPath || '-' }}</el-descriptions-item>
           <el-descriptions-item label="迭代路径" :span="2">{{ selectedItem.iterationPath || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="目标日期" :span="2">{{ formatDateOnly(selectedItem.targetDate) }}</el-descriptions-item>
           <el-descriptions-item label="标签" :span="2">{{ selectedItem.tags || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(selectedItem.createdDate) }}</el-descriptions-item>
           <el-descriptions-item label="修改时间">{{ formatDate(selectedItem.changedDate) }}</el-descriptions-item>
@@ -350,7 +364,7 @@ import { Refresh, RefreshLeft, Search, Setting } from '@element-plus/icons-vue'
 import { tfsApi, type TfsWorkItem, type TfsProject, type TfsAttachment } from '@/api/tfs'
 import { mcpApi, type McpServer, type McpToolInfo } from '@/api/mcp'
 import MarkdownIt from 'markdown-it'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, formatDate as formatDateOnly } from '@/utils/format'
 
 const router = useRouter()
 
@@ -893,6 +907,25 @@ function stateTagColor(state: string) {
   return (map[state] || 'info') as any
 }
 
+// ========== 超期状态（目标日期 vs 当天，渲染时实时计算） ==========
+type OverdueStatus = 'overdue' | 'dueToday' | 'normal' | 'closed' | 'none'
+
+/** 超期状态：未关闭 + 目标日期已过 → 已超期；目标日期为今天 → 今日到期；其余正常；无日期 → none */
+function overdueStatusOf(item: TfsWorkItem): OverdueStatus {
+  if (!item.targetDate) return 'none'
+  const closedStates = ['Closed', '已完成', '已关闭', 'Done', 'Resolved']
+  if (closedStates.includes(item.state)) return 'closed'
+  // 目标日期取本地日期（TFS 传 UTC 午夜零点，直接比日期避免时区差一天）
+  const d = new Date(item.targetDate)
+  const today = new Date()
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const diffDays = Math.round((target.getTime() - now.getTime()) / 86400000)
+  if (diffDays < 0) return 'overdue'
+  if (diffDays === 0) return 'dueToday'
+  return 'normal'
+}
+
 function formatDate(dateStr?: string): string {
   return dateStr ? formatDateTime(dateStr) : '-'
 }
@@ -1232,5 +1265,10 @@ onMounted(async () => {
 }
 .id-link:hover {
   text-decoration: underline;
+}
+
+.overdue-date {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 </style>
