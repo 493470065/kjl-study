@@ -44,6 +44,12 @@ const router = createRouter({
       meta: { title: "需求看板" }
     },
     {
+      path: "/req-collect",
+      name: "reqCollect",
+      component: () => import("@/views/requirements/RequirementCollectView.vue"),
+      meta: { title: "需求归集" }
+    },
+    {
       path: "/todos",
       name: "todos",
       component: () => import("@/views/todo/TodoView.vue"),

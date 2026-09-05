@@ -72,6 +72,11 @@ racc:
     dir: ${racc.data-dir}/mcp
   skills:
     dir: ${racc.data-dir}/skills
+    exec:
+      # 技能脚本运行时（/api/skills/{name}/exec）；用绝对路径避免依赖后端进程 PATH
+      node: ${SKILL_NODE_PATH:C:\Users\Lenovo\.workbuddy\binaries\node\versions\22.22.2-2\node.exe}
+      python: ${SKILL_PYTHON_PATH:C:\Users\Lenovo\.workbuddy\binaries\python\versions\3.13.12\python.exe}
+      timeout-ms: 120000
   pipeline:
     dir: ${racc.data-dir}/pipeline
   agent:

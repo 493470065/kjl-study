@@ -29,6 +29,7 @@ import java.util.NoSuchElementException;
  *   GET    /api/skills/{name}/files/{path}          → 读取文件
  *   POST   /api/skills/{name}/files/{path}          → 写入文件
  *   DELETE /api/skills/{name}/files/{path}          → 删除文件
+ *   POST   /api/skills/{name}/exec           → 执行技能脚本
  *   POST   /api/skills/clone                        → 从 Git 克隆
  *   POST   /api/skills/upload                       → 上传 zip
  */
@@ -36,10 +37,14 @@ import java.util.NoSuchElementException;
 @RequestMapping("/api/skills")
 public class SkillController {
 
-    private final SkillService skillService;
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SkillController.class);
 
-    public SkillController(SkillService skillService) {
+    private final SkillService skillService;
+    private final com.racc.skill.service.SkillExecService skillExecService;
+
+    public SkillController(SkillService skillService, com.racc.skill.service.SkillExecService skillExecService) {
         this.skillService = skillService;
+        this.skillExecService = skillExecService;
     }
 
     // ==================== 列表 & 详情 ====================
@@ -84,6 +89,24 @@ public class SkillController {
             return ResponseEntity.ok(Map.of("success", true));
         } catch (NoSuchElementException e) {
             return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ==================== 执行 ====================
+
+    /** POST /api/skills/{name}/exec — 执行技能脚本（返回 stdout/stderr/exitCode，stdout 可解析为 JSON 时填充 data） */
+    @PostMapping("/{name}/exec")
+    public ResponseEntity<?> execSkill(@PathVariable String name,
+                                       @RequestBody(required = false) SkillExecRequest request) {
+        try {
+            return ResponseEntity.ok(skillExecService.exec(name, request));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("技能执行失败: {}", name, e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "技能执行失败: " + e.getMessage()));
         }
     }
 

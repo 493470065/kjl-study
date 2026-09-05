@@ -11,7 +11,7 @@
         <!-- 分组在 UED 提案 §2.2 基础上定制（2026-09-01 定稿：工作台/AI 能力/AI 配置 三组）；
              「质量与观测」「系统管理」分组待相应页面开放时启用 -->
         <!-- 工作台：每天打开处理事务的入口 -->
-        <el-menu-item-group v-if="anyAccess(['/chat', '/todos', '/requirements'])">
+        <el-menu-item-group v-if="anyAccess(['/chat', '/todos', '/requirements', '/req-collect'])">
           <template #title><span class="menu-group-title">工作台</span></template>
           <el-menu-item v-if="auth.hasMenuAccess('/chat')" index="/chat">
             <el-icon><ChatDotRound /></el-icon>
@@ -24,6 +24,10 @@
           <el-menu-item v-if="auth.hasMenuAccess('/requirements')" index="/requirements">
             <el-icon><DataBoard /></el-icon>
             <span>需求看板</span>
+          </el-menu-item>
+          <el-menu-item v-if="auth.hasMenuAccess('/req-collect')" index="/req-collect">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>需求归集</span>
           </el-menu-item>
         </el-menu-item-group>
 
@@ -163,7 +167,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CircleCheck, DataBoard, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box, Clock } from '@element-plus/icons-vue'
+import { ChatDotRound, CircleCheck, DataBoard, DataAnalysis, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box, Clock } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 

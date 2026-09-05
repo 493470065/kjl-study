@@ -38,7 +38,7 @@
       </template>
     </el-alert>
 
-    <!-- 4 个 Tab：仅切换数据源，内容区统一渲染 -->
+    <!-- 6 个 Tab：仅切换数据源，内容区统一渲染 -->
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <el-tab-pane v-for="tab in TABS" :key="tab.key" :name="tab.key" :label="tab.label" />
     </el-tabs>
@@ -373,7 +373,9 @@ const TABS: TabDef[] = [
   { key: 'followed', label: '关注需求', defaultQueryId: '', configKey: 'reqboard.query.followed' },
   { key: 'translation', label: '多语翻译', defaultQueryId: '', configKey: 'reqboard.query.translation' },
   { key: 'special', label: '多语专项', defaultQueryId: '', configKey: 'reqboard.query.special' },
-  { key: 'inventory', label: '病历库存', defaultQueryId: '920c888e-d178-48f9-b890-31e7a03244d6', configKey: 'reqboard.query.inventory' }
+  { key: 'inventory', label: '病历库存', defaultQueryId: '920c888e-d178-48f9-b890-31e7a03244d6', configKey: 'reqboard.query.inventory' },
+  { key: 'spec', label: 'spec需求', defaultQueryId: '', configKey: 'reqboard.query.spec' },
+  { key: 'aiflow', label: 'Aiflow需求', defaultQueryId: '', configKey: 'reqboard.query.aiflow' }
 ]
 
 // ========== 通用状态 ==========
@@ -392,9 +394,9 @@ function getWorkItemUrl(id: number) {
 
 
 // ========== 各 Tab 数据 ==========
-const tabItems = reactive<Record<string, TfsWorkItem[]>>({ followed: [], translation: [], special: [], inventory: [] })
-const tabLoading = reactive<Record<string, boolean>>({ followed: false, translation: false, special: false, inventory: false })
-const tabLoaded = reactive<Record<string, boolean>>({ followed: false, translation: false, special: false, inventory: false })
+const tabItems = reactive<Record<string, TfsWorkItem[]>>({ followed: [], translation: [], special: [], inventory: [], spec: [], aiflow: [] })
+const tabLoading = reactive<Record<string, boolean>>({ followed: false, translation: false, special: false, inventory: false, spec: false, aiflow: false })
+const tabLoaded = reactive<Record<string, boolean>>({ followed: false, translation: false, special: false, inventory: false, spec: false, aiflow: false })
 
 // ========== 数据源配置（每个 Tab 二选一，均持久化到系统配置 group=reqboard）==========
 //   reqboard.query.{tab}  → TFS 存储查询 ID（原有能力，完整保留）
@@ -501,8 +503,10 @@ function parseMcpConfig(raw: string): McpTabConfig | null {
 async function loadTabConfigs() {
   try {
     const cfg = loadLocalConfig()
-    for (const [k, v] of Object.entries(cfg.queryIds)) {
-      if (v) configuredQueryIds[k] = v
+    // queryIds 兼容两种历史键：configKey（reqboard.query.{tab}）与 tab.key
+    for (const t of TABS) {
+      const q = cfg.queryIds[t.configKey] ?? cfg.queryIds[t.key]
+      if (q) configuredQueryIds[t.configKey] = q
     }
     for (const [k, v] of Object.entries(cfg.sources)) {
       configuredSources[k] = v === 'mcp' ? 'mcp' : 'tfs'
@@ -513,6 +517,43 @@ async function loadTabConfigs() {
   } catch {
     // 读取失败时使用默认查询
   }
+}
+
+// ========== UI 状态持久化：记住激活 Tab 与每个 Tab 的查询条件（刷新/切菜单不丢） ==========
+const LS_UI_KEY = 'reqboard.ui.v1'
+interface TabUiState { state?: string; id?: string; product?: string; customer?: string; pageSize?: number }
+interface ReqboardUi { activeTab?: string; perTab: Record<string, TabUiState> }
+
+function loadReqboardUi(): ReqboardUi {
+  try {
+    const raw = localStorage.getItem(LS_UI_KEY)
+    if (raw) {
+      const o = JSON.parse(raw)
+      if (o && typeof o === 'object') return { activeTab: String(o.activeTab || ''), perTab: o.perTab || {} }
+    }
+  } catch { /* 忽略损坏的缓存 */ }
+  return { perTab: {} }
+}
+const reqUi = loadReqboardUi()
+
+function persistTabUi() {
+  try {
+    reqUi.activeTab = activeTab.value
+    reqUi.perTab[activeTab.value] = {
+      state: stateFilter.value, id: idFilter.value, product: productFilter.value,
+      customer: customerFilter.value, pageSize: pageSize.value
+    }
+    localStorage.setItem(LS_UI_KEY, JSON.stringify(reqUi))
+  } catch { /* 忽略容量错误 */ }
+}
+
+function applyTabUi(key: string) {
+  const s = reqUi.perTab[key] || {}
+  stateFilter.value = s.state || ''
+  idFilter.value = s.id || ''
+  productFilter.value = s.product || ''
+  customerFilter.value = s.customer || ''
+  if (s.pageSize && [10, 20, 50, 100].includes(s.pageSize)) pageSize.value = s.pageSize
 }
 
 const projects = ref<TfsProject[]>([])
@@ -944,9 +985,10 @@ const pagedItems = computed(() => {
   return filteredActiveItems.value.slice(start, start + pageSize.value)
 })
 
-// 切换 Tab 或改动任一查询条件、页大小时回到第一页
+// 切换 Tab 或改动任一查询条件、页大小时回到第一页；条件变化即持久化（记住每个 Tab 的配置）
 watch([activeTab, stateFilter, idFilter, productFilter, customerFilter, pageSize], () => {
   currentPage.value = 1
+  persistTabUi()
 })
 
 // ========== 详情抽屉（共用） ==========
@@ -1006,8 +1048,11 @@ function downloadAttachment(attachment: TfsAttachment) {
 
 // ========== Tab 切换 ==========
 function handleTabChange(name: string | number) {
-  resetFilters()   // 切换 Tab 时清空查询条件（含状态），并回到第一页
   const key = String(name)
+  // 切换 Tab 时恢复该 Tab 上次使用的查询条件（记住，不清空）；回到第一页
+  applyTabUi(key)
+  currentPage.value = 1
+  persistTabUi()
   // TFS 不可用时，走 MCP 数据源的 Tab 仍应正常加载
   if (!tabLoaded[key] && (tfsAvailable.value || configuredSources[key] === 'mcp')) {
     loadTab(key)
@@ -1018,11 +1063,15 @@ function handleTabChange(name: string | number) {
 onMounted(async () => {
   await checkStatus()
   await loadTabConfigs()
+  // 恢复上次停留的 Tab 与该 Tab 的查询条件
+  const restoredTab = TABS.some(t => t.key === reqUi.activeTab) ? reqUi.activeTab as string : 'followed'
+  activeTab.value = restoredTab
+  applyTabUi(restoredTab)
   // 预加载 MCP 服务列表：工具栏/配置弹窗要展示服务名
   await ensureMcpServers()
   // TFS 不可用时，若首屏 Tab 走的是 MCP 数据源，仍应尝试加载
-  if (tfsAvailable.value || configuredSources['followed'] === 'mcp') {
-    loadTab('followed')
+  if (tfsAvailable.value || configuredSources[restoredTab] === 'mcp') {
+    loadTab(restoredTab)
   }
 })
 </script>

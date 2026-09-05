@@ -80,6 +80,26 @@ export const skillApi = {
     return res.data
   },
 
+  /**
+   * 执行技能脚本（后端 POST /api/skills/{name}/exec）
+   * data: { entry?: 脚本相对路径（缺省自动探测）, args?: 参数（数组逐项传参/对象序列化为 JSON 串）, timeoutMs?: 超时毫秒 }
+   * 返回: { success, exitCode, entry, stdout, stderr, durationMs, timedOut, data?, detectedEntries? }
+   */
+  async executeSkill(name: string, data?: { entry?: string; args?: unknown; timeoutMs?: number }): Promise<{
+    success: boolean
+    exitCode: number | null
+    entry: string
+    stdout: string
+    stderr: string
+    durationMs: number
+    timedOut: boolean
+    data?: unknown
+    detectedEntries?: string[]
+  }> {
+    const res = await http.post(`/skills/${name}/exec`, data || {})
+    return res.data
+  },
+
   async uploadSkill(name: string, file: File): Promise<{name: string; directory: string}> {
     const formData = new FormData()
     formData.append('file', file)
