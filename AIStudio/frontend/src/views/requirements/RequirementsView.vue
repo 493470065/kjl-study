@@ -116,7 +116,7 @@
         style="cursor: pointer; margin-top: 12px"
         @row-click="showDetail"
       >
-        <!-- 列顺序：ID、标题、类型、产品名称、优先级、状态、目标日期、超期状态、指派人、客户名称、创建时间、操作 -->
+        <!-- 列顺序：ID、标题、类型、产品名称、优先级、状态、完成日期、超期状态、指派人、客户名称、创建时间、操作 -->
         <el-table-column prop="id" label="ID" width="100">
           <template #default="{ row }">
             <a :href="getWorkItemUrl(row.id)" target="_blank" class="id-link" @click.stop>{{ row.id }}</a>
@@ -140,9 +140,9 @@
             <el-tag :type="stateTagColor(row.state)" size="small">{{ row.state }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="targetDate" label="目标日期" width="110">
+        <el-table-column prop="finishDate" label="完成日期" width="110">
           <template #default="{ row }">
-            <span :class="{ 'overdue-date': overdueStatusOf(row) === 'overdue' }">{{ formatDateOnly(row.targetDate) }}</span>
+            <span :class="{ 'overdue-date': overdueStatusOf(row) === 'overdue' }">{{ formatDateOnly(row.finishDate) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="超期状态" width="100">
@@ -313,7 +313,7 @@
           <el-descriptions-item label="客户名称">{{ selectedItem.customerName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="区域路径" :span="2">{{ selectedItem.areaPath || '-' }}</el-descriptions-item>
           <el-descriptions-item label="迭代路径" :span="2">{{ selectedItem.iterationPath || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="目标日期" :span="2">{{ formatDateOnly(selectedItem.targetDate) }}</el-descriptions-item>
+          <el-descriptions-item label="完成日期" :span="2">{{ formatDateOnly(selectedItem.finishDate) }}</el-descriptions-item>
           <el-descriptions-item label="标签" :span="2">{{ selectedItem.tags || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(selectedItem.createdDate) }}</el-descriptions-item>
           <el-descriptions-item label="修改时间">{{ formatDate(selectedItem.changedDate) }}</el-descriptions-item>
@@ -616,7 +616,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   reproSteps: ['reproSteps', 'Microsoft.VSTS.TCM.ReproSteps'],
   acceptanceCriteria: ['acceptanceCriteria', 'Microsoft.VSTS.Common.AcceptanceCriteria'],
   requirementAnalysis: ['requirementAnalysis'],
-  targetDate: ['targetDate', 'TargetDate', 'Microsoft.VSTS.Scheduling.TargetDate'],
+  finishDate: ['finishDate', 'FinishDate', 'Microsoft.VSTS.Scheduling.FinishDate'],
   url: ['url', 'htmlLink']
 }
 
@@ -907,16 +907,16 @@ function stateTagColor(state: string) {
   return (map[state] || 'info') as any
 }
 
-// ========== 超期状态（目标日期 vs 当天，渲染时实时计算） ==========
+// ========== 超期状态（完成日期 vs 当天，渲染时实时计算） ==========
 type OverdueStatus = 'overdue' | 'dueToday' | 'normal' | 'closed' | 'none'
 
-/** 超期状态：未关闭 + 目标日期已过 → 已超期；目标日期为今天 → 今日到期；其余正常；无日期 → none */
+/** 超期状态（积压报表口径）：未关闭 + 完成日期已过 → 已超期；完成日期为今天 → 今日到期；其余正常；无日期 → none */
 function overdueStatusOf(item: TfsWorkItem): OverdueStatus {
-  if (!item.targetDate) return 'none'
-  const closedStates = ['Closed', '已完成', '已关闭', 'Done', 'Resolved']
+  if (!item.finishDate) return 'none'
+  const closedStates = ['已关闭', '已验证', 'Closed', 'Resolved']
   if (closedStates.includes(item.state)) return 'closed'
-  // 目标日期取本地日期（TFS 传 UTC 午夜零点，直接比日期避免时区差一天）
-  const d = new Date(item.targetDate)
+  // 完成日期取本地日期（TFS 传 UTC 时间，直接比日期避免时区差一天）
+  const d = new Date(item.finishDate)
   const today = new Date()
   const target = new Date(d.getFullYear(), d.getMonth(), d.getDate())
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate())
