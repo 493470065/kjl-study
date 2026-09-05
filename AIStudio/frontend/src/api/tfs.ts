@@ -8,6 +8,8 @@ export interface TfsWorkItem {
   state: string
   /** 需求性质（卫宁自定义字段 Microsoft.VSTS.CMMI.RequirementType：功能性/接口/软件质量） */
   requirementType?: string
+  /** 目标日期（TFS 调度字段 Microsoft.VSTS.Scheduling.TargetDate），超期状态判定依据 */
+  targetDate?: string
   assignedTo?: string
   project?: string
   /** 产品名称（卫宁自定义字段 Winning.Product.Name） */

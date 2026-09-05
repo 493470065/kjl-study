@@ -602,6 +602,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   reproSteps: ['reproSteps', 'Microsoft.VSTS.TCM.ReproSteps'],
   acceptanceCriteria: ['acceptanceCriteria', 'Microsoft.VSTS.Common.AcceptanceCriteria'],
   requirementAnalysis: ['requirementAnalysis'],
+  targetDate: ['targetDate', 'TargetDate', 'Microsoft.VSTS.Scheduling.TargetDate'],
   url: ['url', 'htmlLink']
 }
 
