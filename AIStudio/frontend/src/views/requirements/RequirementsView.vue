@@ -913,7 +913,8 @@ type OverdueStatus = 'overdue' | 'dueToday' | 'normal' | 'closed' | 'none'
 /** 超期状态（积压报表口径）：未关闭 + 完成日期已过 → 已超期；完成日期为今天 → 今日到期；其余正常；无日期 → none */
 function overdueStatusOf(item: TfsWorkItem): OverdueStatus {
   if (!item.finishDate) return 'none'
-  const closedStates = ['已关闭', '已验证', 'Closed', 'Resolved']
+  // 终结态：已关闭/已验证（Closed 为英文等价）；已解决(Resolved)非终结态，仍参与延期判定
+  const closedStates = ['已关闭', '已验证', 'Closed']
   if (closedStates.includes(item.state)) return 'closed'
   // 完成日期取本地日期（TFS 传 UTC 时间，直接比日期避免时区差一天）
   const d = new Date(item.finishDate)
