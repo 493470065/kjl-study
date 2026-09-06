@@ -40,14 +40,18 @@
     </div>
 
     <div class="kv-content">
-      <!-- Pane 1: Documents (manual upload) —— 文书 Spec 与 SOP 文档 共用此上传式列表面板，按 sourceType 区分 -->
-      <div v-show="activeTab === 'documents' || activeTab === 'sop'" class="kv-pane">
+      <!-- Pane 1: Documents (manual upload) —— 文书 Spec / SOP / 多语专项 共用此上传式列表面板，按 sourceType 区分 -->
+      <div v-show="activeTab === 'documents' || activeTab === 'sop' || activeTab === 'ml'" class="kv-pane">
         <!-- 主操作栏：标题 + 搜索 + 主按钮 -->
         <div class="kv-toolbar">
           <div class="kv-toolbar__right">
+            <el-button v-if="isMlView" type="success" plain :icon="RefreshRight" :loading="mlSyncing" @click="syncMlDocs(false)">
+              同步多语资料
+            </el-button>
             <el-button type="primary" :icon="Upload" @click="uploadDialogVisible = true">
               {{ uploadButtonLabel }}
             </el-button>
+            <el-button plain :icon="Refresh" @click="handleManualRefresh" :loading="listLoading">刷新</el-button>
             <el-button plain :icon="RefreshRight" @click="handleReindex">重新索引</el-button>
             <el-button plain :icon="DataAnalysis" @click="handleKnowledgeStatus">知识库状态</el-button>
           </div>
@@ -197,7 +201,7 @@
                 <el-button type="primary" link size="small" @click.stop="openDetail(row)">
                   查看
                 </el-button>
-                <el-button v-if="row.sourceType === 'upload' || row.sourceType === 'FILE' || row.sourceType === 'TEXT' || row.sourceType === 'sop'" type="warning" link size="small" @click.stop="handleEdit(row)">
+                <el-button v-if="row.sourceType === 'upload' || row.sourceType === 'FILE' || row.sourceType === 'TEXT' || row.sourceType === 'sop' || row.sourceType === 'ml-special'" type="warning" link size="small" @click.stop="handleEdit(row)">
                   编辑
                 </el-button>
                 <el-button type="danger" link size="small" @click.stop="handleDelete(row.id)">删除</el-button>
@@ -721,17 +725,48 @@
   </page-container>
 </template>
 
+<script lang="ts">
+// ===== 模块级缓存：知识库列表数据不随组件销毁丢失 =====
+// 重新进入页面 / 在三个视图（文书 Spec / 代码扫描 / SOP）间切换时，直接展示上次获取的数据，
+// 不再自动请求；数据更新由工具栏「刷新」按钮人工触发。
+import type { KnowledgeDocument } from '@/api/knowledge'
+
+interface KvSnapshot {
+  documents: KnowledgeDocument[]
+  totalElements: number
+  currentPage: number
+  pageSize: number
+  selectedCategory: string
+  selectedProductLine: string
+  filterModule: string
+  filterFunctionPoint: string
+  selectedTag: string
+  categories: string[]
+  modules: string[]
+  functionPoints: string[]
+}
+const kvSnapshots: Record<string, KvSnapshot> = {}
+let kvAux: {
+  productLines: { name: string; displayName: string }[]
+  columnsDescriptor: { columns: string[]; tags: string[]; hasModule: boolean; hasFunctionPoint: boolean; hasSourceUrl: boolean }
+  columnVisibility: Record<string, boolean>
+  fixedColumnVisibility: Record<string, boolean>
+  scanFixedColumnVisibility: Record<string, boolean>
+} | null = null
+
+export default {}
+</script>
+
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, UploadInstance, UploadRawFile } from 'element-plus'
 import {
   Upload, UploadFilled, Document, EditPen, ArrowRight,
-  RefreshRight, DataAnalysis, Link, Search
+  RefreshRight, DataAnalysis, Link, Search, Refresh
 } from '@element-plus/icons-vue'
 import {
   knowledgeApi,
-  type KnowledgeDocument,
   type SearchResult,
   type GraphContext,
   type KnowledgeStatus
@@ -741,7 +776,7 @@ import { scanApi, type ScanPreview, type ScanResult } from '@/api/scan'
 import { graphApi, type GraphEntity, type GraphData, type GraphStats } from '@/api/graph'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { useStatusTag } from '@/composables/useStatusTag'
-
+import { useConfirmDelete } from '@/composables/useConfirmDelete'
 import KnowledgeFilters from './components/KnowledgeFilters.vue'
 import KnowledgeSearchResults from './components/KnowledgeSearchResults.vue'
 import WikiPageTab from './components/WikiPageTab.vue'
@@ -750,6 +785,7 @@ import { formatDateTime } from '@/utils/format'
 
 // ---- Composables ----
 const { renderMarkdown } = useMarkdown()
+const { confirmDelete } = useConfirmDelete()
 
 // ---- State ----
 
@@ -760,7 +796,8 @@ const activeTab = ref('documents')
 const navOptions = [
   { label: '文书 Spec', value: 'documents' },
   { label: '代码扫描', value: 'scan' },
-  { label: 'SOP 文档', value: 'sop' }
+  { label: 'SOP 文档', value: 'sop' },
+  { label: '多语专项', value: 'ml' }
 ]
 
 // Computed source type based on active tab
@@ -768,14 +805,24 @@ const currentSourceType = computed(() => {
   if (activeTab.value === 'documents') return 'upload'
   if (activeTab.value === 'scan') return 'scan'
   if (activeTab.value === 'sop') return 'sop'
+  if (activeTab.value === 'ml') return 'ml-special'
   return undefined
 })
 
 // 上传按钮文案 / 弹窗标题 / 入库 sourceType：SOP 视图独立成桶（sourceType='sop'）
 const isSopView = computed(() => activeTab.value === 'sop')
-const uploadButtonLabel = computed(() => isSopView.value ? '上传SOP 文档' : '上传文档')
-// 上传时写入的 sourceType：SOP 视图落 'sop'；其余视图返回 undefined 以沿用原有逻辑/后端默认值
-const uploadSourceType = computed<string | undefined>(() => isSopView.value ? 'sop' : undefined)
+const isMlView = computed(() => activeTab.value === 'ml')
+const uploadButtonLabel = computed(() => {
+  if (isSopView.value) return '上传SOP 文档'
+  if (isMlView.value) return '上传多语文档'
+  return '上传文档'
+})
+// 上传时写入的 sourceType：SOP 视图落 'sop'、多语专项视图落 'ml-special'；其余视图返回 undefined 以沿用原有逻辑/后端默认值
+const uploadSourceType = computed<string | undefined>(() => {
+  if (isSopView.value) return 'sop'
+  if (isMlView.value) return 'ml-special'
+  return undefined
+})
 
 // Document list
 const documents = ref<KnowledgeDocument[]>([])
@@ -835,7 +882,7 @@ const uploadForm = ref({
   url: ''
 })
 
-const predefinedCategories = ['开发规范', '业务规则', 'CLAUDE.md', '技术文档', '其他']
+const predefinedCategories = ['开发规范', '业务规则', 'CLAUDE.md', '技术文档', '多语专项', '其他']
 
 // 模块 / 功能点（用于上下文检索筛选与文档组织）
 const modules = ref<string[]>([])
@@ -1074,10 +1121,93 @@ async function fetchDocuments() {
     totalElements.value = result.totalElements
     fetchProductLines()
     fetchColumns()
+    saveSnapshot()
   } catch (err: any) {
     ElMessage.error('获取文档列表失败: ' + (err.message || '未知错误'))
   } finally {
     listLoading.value = false
+  }
+}
+
+/** 当前视图的缓存键（与 sourceType 对应） */
+function snapshotKey(): string {
+  return currentSourceType.value || 'upload'
+}
+
+/** 成功拉取后保存快照：重进页面 / 切换视图时直接展示，不再自动请求 */
+function saveSnapshot() {
+  kvSnapshots[snapshotKey()] = {
+    documents: documents.value,
+    totalElements: totalElements.value,
+    currentPage: currentPage.value,
+    pageSize: pageSize.value,
+    selectedCategory: selectedCategory.value,
+    selectedProductLine: selectedProductLine.value,
+    filterModule: filterModule.value,
+    filterFunctionPoint: filterFunctionPoint.value,
+    selectedTag: selectedTag.value,
+    categories: categories.value,
+    modules: modules.value,
+    functionPoints: functionPoints.value
+  }
+  kvAux = {
+    productLines: productLines.value,
+    columnsDescriptor: columnsDescriptor.value,
+    columnVisibility: columnVisibility.value,
+    fixedColumnVisibility: fixedColumnVisibility.value,
+    scanFixedColumnVisibility: scanFixedColumnVisibility.value
+  }
+}
+
+/** 恢复指定视图的快照；返回 false 表示该视图尚无缓存（需真实拉取） */
+function restoreSnapshot(key: string): boolean {
+  const snap = kvSnapshots[key]
+  if (!snap) return false
+  documents.value = snap.documents
+  totalElements.value = snap.totalElements
+  currentPage.value = snap.currentPage
+  pageSize.value = snap.pageSize
+  selectedCategory.value = snap.selectedCategory
+  selectedProductLine.value = snap.selectedProductLine
+  filterModule.value = snap.filterModule
+  filterFunctionPoint.value = snap.filterFunctionPoint
+  selectedTag.value = snap.selectedTag
+  categories.value = snap.categories
+  modules.value = snap.modules
+  functionPoints.value = snap.functionPoints
+  if (kvAux) {
+    productLines.value = kvAux.productLines
+    columnsDescriptor.value = kvAux.columnsDescriptor
+    columnVisibility.value = kvAux.columnVisibility
+    fixedColumnVisibility.value = kvAux.fixedColumnVisibility
+    scanFixedColumnVisibility.value = kvAux.scanFixedColumnVisibility
+  }
+  return true
+}
+
+/** 人工手动刷新：重新拉取当前视图列表与辅助数据 */
+async function handleManualRefresh() {
+  await Promise.all([fetchDocuments(), fetchCategories(), fetchModules(), fetchFunctionPoints()])
+  ElMessage.success('已刷新')
+}
+
+// ==================== 多语专项自动入库 ====================
+
+const mlSyncing = ref(false)
+const mlAutoSyncTried = ref(false)
+
+/** 同步多语专项资料入库（调 kdocs-cli 抽取正文，幂等）；auto=true 时静默容错 */
+async function syncMlDocs(auto: boolean) {
+  mlSyncing.value = true
+  try {
+    const r = await knowledgeApi.syncMlSpecial()
+    const ok = r.results.filter(x => x.ok).length
+    ElMessage.success(`多语资料同步完成：成功 ${ok}/${r.results.length} 篇${r.results.length > ok ? '（失败篇目多为不支持正文抽取的格式，已收录元数据）' : ''}`)
+    await fetchDocuments()
+  } catch (err: any) {
+    if (!auto) ElMessage.error('多语资料同步失败: ' + (err.message || '未知错误'))
+  } finally {
+    mlSyncing.value = false
   }
 }
 
@@ -1125,6 +1255,7 @@ async function fetchColumns() {
       sfvis[c.key] = savedScanFixed[c.key] !== undefined ? savedScanFixed[c.key] : c.defaultVisible
     }
     scanFixedColumnVisibility.value = sfvis
+    saveSnapshot() // 列描述/列显隐就绪后刷新缓存（首载时 documents 可能先于本函数完成）
   } catch { /* optional */ }
 }
 
@@ -1363,7 +1494,11 @@ async function handleDelete(id: number) {
 async function handleReindex() {
   try {
     const res = await knowledgeApi.reindex()
-    ElMessage.success(`重新索引完成，处理 ${res.processed} 个文档`)
+    if (res.started) {
+      ElMessage.success(`向量化任务已启动（待处理 ${res.pending ?? 0} 篇），可在「知识库状态」查看进度`)
+    } else {
+      ElMessage.info(res.message || '向量化任务进行中，请稍后')
+    }
   } catch (err: any) {
     ElMessage.error('重新索引失败: ' + (err.message || '未知错误'))
   }
@@ -1372,13 +1507,19 @@ async function handleReindex() {
 async function handleKnowledgeStatus() {
   try {
     const status: KnowledgeStatus = await knowledgeApi.status()
+    const vectorLine = status.vectorSearchEnabled
+      ? `向量检索: 已启用（${status.vectorProvider || '本地向量化'}）· 已向量化文档 ${status.vectorizedDocuments ?? '-'} / ${status.totalDocuments}`
+      : '向量检索: 未启用'
     const lines = [
       `文档总数: ${status.totalDocuments}`,
-      `向量检索: ${status.vectorSearchEnabled ? '已启用' : '未启用'}`,
+      vectorLine,
       `Wiki 页数: ${status.wikiTotal}`,
       `Wiki 状态: ${JSON.stringify(status.wikiByStatus || {})}`,
       `图谱实体/关系: ${JSON.stringify(status.graphStats || {})}`
     ]
+    if (status.vectorSearchEnabled && (status.vectorizedDocuments ?? 0) === 0) {
+      lines.push('提示: 尚无向量化文档，请点击「重新索引」为存量文档生成向量。')
+    }
     ElMessageBox.alert(lines.join('<br/>'), '知识库状态', {
       dangerouslyUseHTMLString: true,
       confirmButtonText: '关闭'
@@ -1725,10 +1866,21 @@ watch(activeTab, (newTab, oldTab) => {
     currentPage.value = 1
   }
 
-  // Load tab-specific data
-  if (newTab === 'documents' || newTab === 'scan' || newTab === 'sop') {
-    fetchDocuments()
-    fetchProductLines()
+  // Load tab-specific data：优先展示上次数据（缓存），该视图从未加载过才真实拉取
+  if (newTab === 'documents' || newTab === 'scan' || newTab === 'sop' || newTab === 'ml') {
+    const key = newTab === 'documents' ? 'upload' : newTab
+    if (!restoreSnapshot(key)) {
+      fetchDocuments()
+      fetchCategories()
+      fetchModules()
+      fetchFunctionPoints()
+      fetchColumns()
+    }
+    // 多语专项视图：列表为空且本会话未自动同步过 → 自动触发一次资料入库
+    if (newTab === 'ml' && !mlAutoSyncTried.value) {
+      mlAutoSyncTried.value = true
+      if (documents.value.length === 0) syncMlDocs(true)
+    }
   } else if (newTab === 'wiki') {
     if (documents.value.length === 0) {
       fetchDocuments()
@@ -1740,6 +1892,8 @@ watch(activeTab, (newTab, oldTab) => {
 })
 
 onMounted(() => {
+  // 有缓存直接展示上次数据（不重新加载）；首次进入才拉取。数据更新由工具栏「刷新」人工触发。
+  if (restoreSnapshot(snapshotKey())) return
   fetchDocuments()
   fetchCategories()
   fetchProductLines()

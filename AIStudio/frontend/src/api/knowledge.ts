@@ -56,6 +56,10 @@ export interface GraphRagSearchResult {
 export interface KnowledgeStatus {
   totalDocuments: number
   vectorSearchEnabled: boolean
+  /** 向量化来源：远程模型 / 本地向量化 */
+  vectorProvider?: string
+  /** 已生成向量的文档数（为 0 时语义检索无候选，需先「重新索引」） */
+  vectorizedDocuments?: number
   wikiTotal: number
   wikiByStatus: Record<string, number>
   graphStats: Record<string, number>
@@ -129,7 +133,12 @@ export const knowledgeApi = {
 
   /** Re-index all knowledge documents (build vector index / graph) */
   reindex() {
-    return http.post<{ processed: number }>('/knowledge/reindex').then(r => r.data)
+    return http.post<{ started: boolean; pending?: number; message?: string }>('/knowledge/reindex').then(r => r.data)
+  },
+
+  /** 多语专项资料自动入库：调 kdocs-cli 抽取正文（otl/xlsx），.pom 降级收录元数据；幂等 */
+  syncMlSpecial() {
+    return http.post<{ results: { title: string; ok: boolean; chars?: number; error?: string }[] }>('/knowledge/ml-special/sync').then(r => r.data)
   },
 
   /** Get knowledge base status */

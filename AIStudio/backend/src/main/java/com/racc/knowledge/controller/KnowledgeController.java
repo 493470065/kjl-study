@@ -34,9 +34,24 @@ import java.util.NoSuchElementException;
 public class KnowledgeController {
 
     private final KnowledgeService knowledgeService;
+    private final com.racc.knowledge.service.MlDocsSyncService mlDocsSyncService;
 
-    public KnowledgeController(KnowledgeService knowledgeService) {
+    public KnowledgeController(KnowledgeService knowledgeService,
+                               com.racc.knowledge.service.MlDocsSyncService mlDocsSyncService) {
         this.knowledgeService = knowledgeService;
+        this.mlDocsSyncService = mlDocsSyncService;
+    }
+
+    // ==================== 多语专项自动入库 ====================
+
+    /**
+     * 同步多语专项资料入库（sourceType=ml-special）：
+     * 调用 kdocs-cli 按文档类型自动抽取正文（otl/xlsx），.pom 等不可抽取类型降级收录元数据。
+     * 幂等：按 (sourceType, title) 先删后建。
+     */
+    @PostMapping("/ml-special/sync")
+    public ResponseEntity<?> syncMlSpecial() {
+        return ResponseEntity.ok(Map.of("results", mlDocsSyncService.syncAll()));
     }
 
     // ==================== 分页列表 ====================

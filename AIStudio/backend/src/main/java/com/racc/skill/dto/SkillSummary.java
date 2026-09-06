@@ -14,6 +14,8 @@ public class SkillSummary {
     private Integer referenceCount;
     private Boolean disabled = false;
     private Boolean copyEnabled = false;
+    /** 人工维护的分类标识（存于技能目录下 .tag 文件，用于左侧列表分组） */
+    private String tag;
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -41,4 +43,7 @@ public class SkillSummary {
 
     public Boolean getCopyEnabled() { return copyEnabled; }
     public void setCopyEnabled(Boolean copyEnabled) { this.copyEnabled = copyEnabled; }
+
+    public String getTag() { return tag; }
+    public void setTag(String tag) { this.tag = tag; }
 }

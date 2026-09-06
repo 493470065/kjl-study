@@ -8,10 +8,10 @@
       <el-menu :default-active="activeMenu" router :default-openeds="systemSubMenuOpen"
           :collapse="sidebarCollapsed" :collapse-transition="false"
           background-color="transparent" text-color="#d8d2c2" active-text-color="var(--paper)">
-        <!-- 分组在 UED 提案 §2.2 基础上定制（2026-09-01 定稿：工作台/AI 能力/AI 配置 三组）；
+        <!-- 分组在 UED 提案 §2.2 基础上定制（2026-09-01 定稿：工作台/AI助手/AI 配置 三组）；
              「质量与观测」「系统管理」分组待相应页面开放时启用 -->
         <!-- 工作台：每天打开处理事务的入口 -->
-        <el-menu-item-group v-if="anyAccess(['/chat', '/todos', '/requirements', '/req-collect'])">
+        <el-menu-item-group v-if="anyAccess(['/chat', '/todos', '/requirements', '/req-collect', '/i18n-special'])">
           <template #title><span class="menu-group-title">工作台</span></template>
           <el-menu-item v-if="auth.hasMenuAccess('/chat')" index="/chat">
             <el-icon><ChatDotRound /></el-icon>
@@ -29,11 +29,15 @@
             <el-icon><DataAnalysis /></el-icon>
             <span>需求归集</span>
           </el-menu-item>
+          <el-menu-item v-if="auth.hasMenuAccess('/i18n-special')" index="/i18n-special">
+            <el-icon><Promotion /></el-icon>
+            <span>多语专项</span>
+          </el-menu-item>
         </el-menu-item-group>
 
-        <!-- AI 能力：沉淀可复用的能力并编排执行（Webhook 开放后收编于此） -->
+        <!-- AI助手：沉淀可复用的能力并编排执行（Webhook 开放后收编于此） -->
         <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents', '/workflows', '/automate', '/scheduled-tasks'])">
-          <template #title><span class="menu-group-title">AI 能力</span></template>
+          <template #title><span class="menu-group-title">AI助手</span></template>
           <el-menu-item v-if="auth.hasMenuAccess('/knowledge')" index="/knowledge">
             <el-icon><Collection /></el-icon>
             <span>知识库</span>
@@ -52,7 +56,7 @@
           </el-menu-item>
           <el-menu-item v-if="auth.hasMenuAccess('/automate')" index="/automate">
             <el-icon><Operation /></el-icon>
-            <span>自动化管理</span>
+            <span>自动化流程</span>
           </el-menu-item>
           <el-menu-item v-if="auth.hasMenuAccess('/scheduled-tasks')" index="/scheduled-tasks">
             <el-icon><Clock /></el-icon>
@@ -167,7 +171,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CircleCheck, DataBoard, DataAnalysis, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box, Clock } from '@element-plus/icons-vue'
+import { ChatDotRound, CircleCheck, DataBoard, DataAnalysis, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box, Clock, Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 

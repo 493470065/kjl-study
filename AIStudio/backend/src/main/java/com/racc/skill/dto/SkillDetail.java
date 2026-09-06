@@ -13,12 +13,17 @@ public class SkillDetail {
     private Map<String, Object> frontmatter;
     private String content;
     private List<SkillFileTreeNode> fileTree;
+    /** 人工维护的分类标识（存于 .tag 文件），未设置时为 null */
+    private String tag;
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
 
     public String getDirectory() { return directory; }
     public void setDirectory(String directory) { this.directory = directory; }
+
+    public String getTag() { return tag; }
+    public void setTag(String tag) { this.tag = tag; }
 
     public Map<String, Object> getFrontmatter() { return frontmatter; }
     public void setFrontmatter(Map<String, Object> frontmatter) { this.frontmatter = frontmatter; }

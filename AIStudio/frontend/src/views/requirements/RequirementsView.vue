@@ -100,6 +100,9 @@
         >
           <el-option v-for="c in customerOptions" :key="c" :label="c" :value="c" />
         </el-select>
+        <el-select v-model="overdueFilter" placeholder="超期状态" clearable style="width: 150px">
+          <el-option v-for="o in OVERDUE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
         <el-button :disabled="!hasFilter" @click="resetFilters">
           <el-icon><RefreshLeft /></el-icon> 重置
         </el-button>
@@ -116,28 +119,40 @@
         style="cursor: pointer; margin-top: 12px"
         @row-click="showDetail"
       >
-        <!-- 列顺序：ID、标题、类型、产品名称、优先级、状态、完成日期、超期状态、指派人、客户名称、创建时间、操作 -->
+        <!-- 列顺序：ID、标题、产品名称、类型、优先级、状态、指派人、客户名称、创建日期、完成日期、超期状态、操作 -->
         <el-table-column prop="id" label="ID" width="100">
           <template #default="{ row }">
             <a :href="getWorkItemUrl(row.id)" target="_blank" class="id-link" @click.stop>{{ row.id }}</a>
           </template>
         </el-table-column>
         <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="type" label="类型" width="100">
-          <template #default="{ row }">
-            <el-tag :type="typeTagColor(row.type)" size="small">{{ row.type }}</el-tag>
-          </template>
-        </el-table-column>
         <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.productName">{{ row.productName }}</span>
             <span v-else style="color: #b8b1a0">-</span>
           </template>
         </el-table-column>
+        <el-table-column prop="type" label="类型" width="100">
+          <template #default="{ row }">
+            <el-tag :type="typeTagColor(displayType(row))" size="small">{{ displayType(row) }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="priority" label="优先级" width="80" />
         <el-table-column prop="state" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="stateTagColor(row.state)" size="small">{{ row.state }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="assignedTo" label="指派人" width="120" show-overflow-tooltip />
+        <el-table-column prop="customerName" label="客户名称" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.customerName">{{ row.customerName }}</span>
+            <span v-else style="color: #b8b1a0">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="createdDate" label="创建日期" width="110">
+          <template #default="{ row }">
+            {{ formatDateOnly(row.createdDate) }}
           </template>
         </el-table-column>
         <el-table-column prop="finishDate" label="完成日期" width="110">
@@ -151,18 +166,6 @@
             <el-tag v-else-if="overdueStatusOf(row) === 'dueToday'" type="warning" size="small">今日到期</el-tag>
             <el-tag v-else-if="overdueStatusOf(row) === 'normal'" type="info" size="small">正常</el-tag>
             <span v-else style="color: #b8b1a0">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="assignedTo" label="指派人" width="120" show-overflow-tooltip />
-        <el-table-column prop="customerName" label="客户名称" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span v-if="row.customerName">{{ row.customerName }}</span>
-            <span v-else style="color: #b8b1a0">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createdDate" label="创建时间" width="160">
-          <template #default="{ row }">
-            {{ formatDate(row.createdDate) }}
           </template>
         </el-table-column>
         <!-- 深链：需求 → 一键启动自动化（预填需求号） -->
@@ -300,7 +303,7 @@
       <div v-if="selectedItem" class="detail-content">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="类型">
-            <el-tag :type="typeTagColor(selectedItem.type)" size="small">{{ selectedItem.type }}</el-tag>
+            <el-tag :type="typeTagColor(displayType(selectedItem))" size="small">{{ displayType(selectedItem) }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="stateTagColor(selectedItem.state)" size="small">{{ selectedItem.state }}</el-tag>
@@ -389,7 +392,10 @@ const TABS: TabDef[] = [
   { key: 'special', label: '多语专项', defaultQueryId: '', configKey: 'reqboard.query.special' },
   { key: 'inventory', label: '病历库存', defaultQueryId: '920c888e-d178-48f9-b890-31e7a03244d6', configKey: 'reqboard.query.inventory' },
   { key: 'spec', label: 'spec需求', defaultQueryId: '', configKey: 'reqboard.query.spec' },
-  { key: 'aiflow', label: 'Aiflow需求', defaultQueryId: '', configKey: 'reqboard.query.aiflow' }
+  { key: 'aiflow', label: 'Aiflow需求', defaultQueryId: '', configKey: 'reqboard.query.aiflow' },
+  { key: 'taikangxianlin', label: '泰康仙林', defaultQueryId: '', configKey: 'reqboard.query.taikangxianlin' },
+  { key: 'suzhouzhongyi', label: '苏州中医', defaultQueryId: '', configKey: 'reqboard.query.suzhouzhongyi' },
+  { key: 'xinchangzhongyi', label: '新昌中医', defaultQueryId: '', configKey: 'reqboard.query.xinchangzhongyi' }
 ]
 
 // ========== 通用状态 ==========
@@ -535,7 +541,7 @@ async function loadTabConfigs() {
 
 // ========== UI 状态持久化：记住激活 Tab 与每个 Tab 的查询条件（刷新/切菜单不丢） ==========
 const LS_UI_KEY = 'reqboard.ui.v1'
-interface TabUiState { state?: string; id?: string; product?: string; customer?: string; pageSize?: number }
+interface TabUiState { state?: string; id?: string; product?: string; customer?: string; overdue?: string; pageSize?: number }
 interface ReqboardUi { activeTab?: string; perTab: Record<string, TabUiState> }
 
 function loadReqboardUi(): ReqboardUi {
@@ -555,7 +561,7 @@ function persistTabUi() {
     reqUi.activeTab = activeTab.value
     reqUi.perTab[activeTab.value] = {
       state: stateFilter.value, id: idFilter.value, product: productFilter.value,
-      customer: customerFilter.value, pageSize: pageSize.value
+      customer: customerFilter.value, overdue: overdueFilter.value, pageSize: pageSize.value
     }
     localStorage.setItem(LS_UI_KEY, JSON.stringify(reqUi))
   } catch { /* 忽略容量错误 */ }
@@ -567,6 +573,7 @@ function applyTabUi(key: string) {
   idFilter.value = s.id || ''
   productFilter.value = s.product || ''
   customerFilter.value = s.customer || ''
+  overdueFilter.value = (s.overdue || '') as OverdueStatus | ''
   if (s.pageSize && [10, 20, 50, 100].includes(s.pageSize)) pageSize.value = s.pageSize
 }
 
@@ -898,8 +905,20 @@ async function resetTabConfig() {
 
 // ========== 工具函数 ==========
 function typeTagColor(type: string) {
-  const map: Record<string, string> = { '需求': 'primary', '任务': 'success', 'Bug': 'danger', '缺陷': 'danger' }
+  const map: Record<string, string> = {
+    '需求': 'primary', '任务': 'success', 'Bug': 'danger', '缺陷': 'danger',
+    // 需求性质（卫宁口径）：功能性/接口/软件质量
+    '功能性': 'primary', '接口': 'warning', '软件质量': 'danger'
+  }
   return (map[type] || 'info') as any
+}
+
+/**
+ * 类型取值：需求性质（Microsoft.VSTS.CMMI.RequirementType）优先，为空回落到工作项类型。
+ * 例：WIT=需求 + 需求性质=软件质量 → 显示「软件质量」；任务/Bug 无需求性质 → 仍显示工作项类型。
+ */
+function displayType(item: { requirementType?: string; type?: string }): string {
+  return (item.requirementType && item.requirementType.trim()) || item.type || ''
 }
 
 function stateTagColor(state: string) {
@@ -939,13 +958,25 @@ function renderMarkdown(content: string) {
 // ========== 统计栏 / 过滤（均针对当前 Tab） ==========
 // stateFilter 与统计栏状态标签双向联动（点标签 = 选状态，选状态 = 高亮标签）
 const stateFilter = ref('')
-// 查询条件：ID / 产品名称 / 客户名称
+// 查询条件：ID / 产品名称 / 客户名称 / 超期状态
 const idFilter = ref('')
 const productFilter = ref('')
 const customerFilter = ref('')
+/** 超期状态筛选，取值同 overdueStatusOf 的返回（空 = 不限） */
+const overdueFilter = ref<OverdueStatus | ''>('')
+const OVERDUE_OPTIONS: { value: OverdueStatus; label: string }[] = [
+  { value: 'overdue', label: '已超期' },
+  { value: 'dueToday', label: '今日到期' },
+  { value: 'normal', label: '正常' },
+  { value: 'closed', label: '已关闭' },
+  { value: 'none', label: '无完成日期' }
+]
 
 const hasFilter = computed(
-  () => !!(idFilter.value.trim() || stateFilter.value || productFilter.value || customerFilter.value)
+  () => !!(
+    idFilter.value.trim() || stateFilter.value || productFilter.value ||
+    customerFilter.value || overdueFilter.value
+  )
 )
 
 /** 去重 + 排序，用于生成下拉选项（选项取自当前 Tab 已加载数据） */
@@ -979,6 +1010,7 @@ function resetFilters() {
   productFilter.value = ''
   customerFilter.value = ''
   stateFilter.value = ''
+  overdueFilter.value = ''
   currentPage.value = 1
 }
 
@@ -996,14 +1028,16 @@ function toggleStateFilter(state: string) {
   stateFilter.value = stateFilter.value === state ? '' : state
 }
 
-// 应用查询条件（ID / 产品名称 / 客户名称 / 状态）后的当前 Tab 数据
+// 应用查询条件（ID / 产品名称 / 客户名称 / 状态 / 超期状态）后的当前 Tab 数据
 const filteredActiveItems = computed(() => {
   const kw = idFilter.value
   const state = stateFilter.value
   const product = productFilter.value
   const customer = customerFilter.value
+  const overdue = overdueFilter.value
   return activeItems.value.filter(item => {
     if (state && item.state !== state) return false
+    if (overdue && overdueStatusOf(item) !== overdue) return false
     if (product && (item.productName || '') !== product) return false
     if (customer && (item.customerName || '') !== customer) return false
     if (kw.trim() && !matchId(item, kw)) return false
@@ -1021,7 +1055,7 @@ const pagedItems = computed(() => {
 })
 
 // 切换 Tab 或改动任一查询条件、页大小时回到第一页；条件变化即持久化（记住每个 Tab 的配置）
-watch([activeTab, stateFilter, idFilter, productFilter, customerFilter, pageSize], () => {
+watch([activeTab, stateFilter, idFilter, productFilter, customerFilter, overdueFilter, pageSize], () => {
   currentPage.value = 1
   persistTabUi()
 })

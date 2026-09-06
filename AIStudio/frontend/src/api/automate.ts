@@ -1,7 +1,7 @@
 import http from './http'
 
 /**
- * 自动化管理（Automate）API 客户端
+ * 自动化流程（Automate）API 客户端
  * 命名约定：前端标识符统一为 Automate*；
  * 后端接口路径（/pipeline/*）与 pipelineId 字段为后端契约，保持不变。
  */

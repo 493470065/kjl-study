@@ -10,6 +10,8 @@ export interface SkillSummary {
   referenceCount?: number
   disabled?: boolean
   copyEnabled?: boolean
+  /** 人工维护的分类标识（后端读技能目录下 .tag 文件） */
+  tag?: string | null
 }
 
 export interface SkillDetail {
@@ -37,6 +39,17 @@ export const skillApi = {
   async listSkills(): Promise<SkillSummary[]> {
     const res = await http.get<SkillSummary[]>('/skills')
     return res.data
+  },
+
+  /** 全部已用分类标识（供下拉建议） */
+  async listTags(): Promise<string[]> {
+    const res = await http.get<string[]>('/skills/tags')
+    return res.data || []
+  },
+
+  /** 设置分类标识；tag 为空表示取消分类 */
+  async setSkillTag(name: string, tag: string): Promise<void> {
+    await http.post(`/skills/${encodeURIComponent(name)}/tag`, { tag })
   },
 
   async getSkillDetail(name: string): Promise<SkillDetail> {

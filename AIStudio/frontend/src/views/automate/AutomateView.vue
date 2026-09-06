@@ -1,5 +1,5 @@
 <template>
-  <page-container title="自动化管理" no-card>
+  <page-container title="自动化流程" no-card>
     <template #actions>
 <el-button @click="adminDialogVisible = true">任务类型管理</el-button>
       <el-button type="primary" @click="showStartDialog = true">自定义启动</el-button>

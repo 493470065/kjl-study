@@ -280,21 +280,70 @@ public class KnowledgeService {
 
     // ==================== 重新索引 ====================
 
+    private final java.util.concurrent.atomic.AtomicBoolean reindexRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /**
+     * 重新索引 = 为缺失向量的文档异步补算嵌入（本地向量化兜底，无外部依赖）。
+     * 立即返回，进度通过 /status 的 vectorizedDocuments 观察。
+     * MySQL FULLTEXT 索引由存储引擎自动维护，无需重建。
+     */
     public Map<String, Object> reindex() {
-        entityManager.flush();
-        // MySQL FULLTEXT 索引由存储引擎随数据变更自动维护，无需像 SQLite FTS5 那样手工重建影子表。
-        // 此处返回全量文档数，保持接口语义（前端"重建索引"按钮）。
-        long processed = repository.count();
-        return Map.of("processed", processed);
+        if (!reindexRunning.compareAndSet(false, true)) {
+            return Map.of("started", false, "message", "向量化任务进行中，请稍后");
+        }
+        List<Long> pendingIds = repository.findIdsWithoutEmbedding();
+        Thread worker = new Thread(() -> {
+            try {
+                final int BATCH = 500;
+                for (int i = 0; i < pendingIds.size(); i += BATCH) {
+                    List<Long> ids = pendingIds.subList(i, Math.min(i + BATCH, pendingIds.size()));
+                    List<KnowledgeDocumentEntity> batch = repository.findAllById(ids);
+                    for (KnowledgeDocumentEntity e : batch) {
+                        String content = e.getContent();
+                        if (content == null || content.isBlank()) continue; // 空文档无法向量化，跳过
+                        e.setEmbedding(EmbeddingService.toJson(embeddingService.embed(content)));
+                    }
+                    repository.saveAll(batch);
+                }
+            } catch (Exception ex) {
+                log.warn("向量化补算任务异常：{}", ex.getMessage(), ex);
+            } finally {
+                // 后台刷新计数缓存，避免状态接口在线全表扫描大文本列
+                try { docCountCache = new DocCountCache(repository.count(), repository.countByEmbeddingIsNotNull()); }
+                catch (Exception ignore) { }
+                reindexRunning.set(false);
+            }
+        }, "knowledge-vectorize");
+        worker.setDaemon(true);
+        worker.start();
+        return Map.of("started", true, "pending", pendingIds.size());
     }
 
     // ==================== 状态 ====================
 
+    /** 文档计数缓存（total + 已向量化）：embedding 大文本列全表扫描慢（~10s），由状态首查/重新索引完成后刷新 */
+    private static final class DocCountCache {
+        final long total;
+        final long vectorized;
+        DocCountCache(long total, long vectorized) { this.total = total; this.vectorized = vectorized; }
+    }
+    private volatile DocCountCache docCountCache;
+
     @Transactional(readOnly = true)
     public Map<String, Object> getStatus() {
-        long totalDocuments = repository.count();
-        // 向量检索是否启用：取决于是否注入了可用的 EmbeddingModel（配置了 embedding 端点即 true）
+        // 向量检索是否启用：远程 EmbeddingModel 或本地向量化兜底任一可用即 true（本地兜底恒可用）
         boolean vectorSearchEnabled = embeddingService.isAvailable();
+        DocCountCache cached = docCountCache;
+        long totalDocuments;
+        long vectorizedDocuments;
+        if (cached != null) {
+            totalDocuments = cached.total;
+            vectorizedDocuments = cached.vectorized;
+        } else {
+            totalDocuments = repository.count();
+            vectorizedDocuments = repository.countByEmbeddingIsNotNull();
+            docCountCache = new DocCountCache(totalDocuments, vectorizedDocuments); // 查询后即缓存
+        }
 
         // Wiki 统计
         long wikiTotal = wikiRepository.count();
@@ -314,6 +363,8 @@ public class KnowledgeService {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("totalDocuments", totalDocuments);
         status.put("vectorSearchEnabled", vectorSearchEnabled);
+        status.put("vectorProvider", embeddingService.providerName());
+        status.put("vectorizedDocuments", vectorizedDocuments);
         status.put("wikiTotal", wikiTotal);
         status.put("wikiByStatus", wikiByStatus);
         status.put("graphStats", graphStats);
@@ -354,30 +405,39 @@ public class KnowledgeService {
         return repository.findDistinctFunctionPoints(blankToNull(sourceType));
     }
 
+    /** 列扫描结果缓存（60s TTL）：该接口需全表扫描，切 Tab 反复调用时避免重复扫 */
+    private volatile Map<String, Object> columnsCache;
+    private volatile long columnsCacheAt;
+
     /**
-     * 动态列描述：扫描全量文档，返回实际存在的字段列与标签集合，供前端列表"按实际字段/标签自动调整"。
+     * 动态列描述：只取 5 个短文本列做全表投影扫描（严禁 findAll()——content/embedding 均为
+     * LONGTEXT，全量物化 2 万+ 行大字段会挂起），返回实际存在的字段列与标签集合，
+     * 供前端列表"按实际字段/标签自动调整"。
      */
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
     public Map<String, Object> listColumns() {
-        List<KnowledgeDocumentEntity> all = repository.findAll();
+        Map<String, Object> cached = columnsCache;
+        if (cached != null && System.currentTimeMillis() - columnsCacheAt < 60_000L) {
+            return cached;
+        }
         LinkedHashSet<String> dynamic = new LinkedHashSet<>();
         LinkedHashSet<String> tags = new LinkedHashSet<>();
         boolean hasModule = false, hasFunctionPoint = false, hasSourceUrl = false;
 
-        for (KnowledgeDocumentEntity e : all) {
-            if (e.getModule() != null && !e.getModule().isBlank()) hasModule = true;
-            if (e.getFunctionPoint() != null && !e.getFunctionPoint().isBlank()) hasFunctionPoint = true;
-            if (e.getSourceUrl() != null && !e.getSourceUrl().isBlank()) hasSourceUrl = true;
-            if (e.getTags() != null && !e.getTags().isBlank()) {
-                for (String t : e.getTags().split("[,，]")) {
+        for (KnowledgeDocumentRepository.ColumnRow row : repository.findColumnRows()) {
+            if (row.getModule() != null && !row.getModule().isBlank()) hasModule = true;
+            if (row.getFunctionPoint() != null && !row.getFunctionPoint().isBlank()) hasFunctionPoint = true;
+            if (row.getSourceUrl() != null && !row.getSourceUrl().isBlank()) hasSourceUrl = true;
+            if (row.getTags() != null && !row.getTags().isBlank()) {
+                for (String t : row.getTags().split("[,，]")) {
                     String tt = t.trim();
                     if (!tt.isEmpty()) tags.add(tt);
                 }
             }
-            if (e.getExtraFields() != null && !e.getExtraFields().isBlank()) {
+            if (row.getExtraFields() != null && !row.getExtraFields().isBlank()) {
                 try {
-                    Map<String, Object> extra = OBJECT_MAPPER.readValue(e.getExtraFields(), Map.class);
+                    Map<String, Object> extra = OBJECT_MAPPER.readValue(row.getExtraFields(), Map.class);
                     for (String k : extra.keySet()) {
                         if (k != null && !k.isBlank()) dynamic.add("field_" + k.trim());
                     }
@@ -397,6 +457,8 @@ public class KnowledgeService {
         result.put("hasModule", hasModule);
         result.put("hasFunctionPoint", hasFunctionPoint);
         result.put("hasSourceUrl", hasSourceUrl);
+        columnsCache = result;
+        columnsCacheAt = System.currentTimeMillis();
         return result;
     }
 

@@ -73,4 +73,34 @@ public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocu
     /** 仅取带嵌入向量的文档（用于语义检索的候选集） */
     @Query("SELECT d FROM KnowledgeDocumentEntity d WHERE d.embedding IS NOT NULL AND d.embedding <> ''")
     List<KnowledgeDocumentEntity> findAllWithEmbedding();
+
+    /** 已向量化文档数（知识库状态展示） */
+    @Query("SELECT COUNT(d) FROM KnowledgeDocumentEntity d WHERE d.embedding IS NOT NULL AND d.embedding <> ''")
+    long countByEmbeddingIsNotNull();
+
+    /** 缺失向量的文档 ID（重新索引时异步补算嵌入） */
+    @Query("SELECT d.id FROM KnowledgeDocumentEntity d WHERE d.embedding IS NULL OR d.embedding = ''")
+    List<Long> findIdsWithoutEmbedding();
+
+    /** 按来源类型 + 标题查重（多语专项自动入库的幂等依据） */
+    List<KnowledgeDocumentEntity> findBySourceTypeAndTitle(String sourceType, String title);
+
+    // ==================== 轻量列扫描（动态列描述） ====================
+
+    /**
+     * 动态列扫描专用投影：只取 5 个短文本列。
+     * 绝不能用 findAll() 做这件事——content/embedding 均为 LONGTEXT，
+     * 全量物化 2 万+ 行大字段会导致 /columns 接口挂起。
+     */
+    interface ColumnRow {
+        String getModule();
+        String getFunctionPoint();
+        String getSourceUrl();
+        String getTags();
+        String getExtraFields();
+    }
+
+    @Query("SELECT d.module AS module, d.functionPoint AS functionPoint, d.sourceUrl AS sourceUrl, "
+         + "d.tags AS tags, d.extraFields AS extraFields FROM KnowledgeDocumentEntity d")
+    List<ColumnRow> findColumnRows();
 }

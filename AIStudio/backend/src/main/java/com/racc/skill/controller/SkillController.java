@@ -17,6 +17,8 @@ import java.util.NoSuchElementException;
  * 前端 API：skill.ts
  * 端点：
  *   GET    /api/skills                              → 列表
+ *   GET    /api/skills/tags                         → 全部已用分类标识
+ *   POST   /api/skills/{name}/tag                   → 设置分类标识（body: {tag}）
  *   GET    /api/skills/{name}                       → 详情
  *   POST   /api/skills                              → 新建
  *   DELETE /api/skills/{name}                       → 删除
@@ -53,6 +55,30 @@ public class SkillController {
     @GetMapping
     public ResponseEntity<List<SkillSummary>> listSkills() {
         return ResponseEntity.ok(skillService.listSkills());
+    }
+
+    // ==================== 分类标识（人工维护） ====================
+
+    /** GET /api/skills/tags — 全部已用标识（供下拉建议） */
+    @GetMapping("/tags")
+    public ResponseEntity<List<String>> listTags() {
+        return ResponseEntity.ok(skillService.listTags());
+    }
+
+    /**
+     * POST /api/skills/{name}/tag — 设置分类标识
+     * body: { "tag": "需求治理" }，tag 为空表示取消分类
+     */
+    @PostMapping("/{name}/tag")
+    public ResponseEntity<?> setSkillTag(@PathVariable String name, @RequestBody Map<String, String> body) {
+        try {
+            skillService.setSkillTag(name, body == null ? null : body.get("tag"));
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     /** GET /api/skills/{name} — 技能详情 */

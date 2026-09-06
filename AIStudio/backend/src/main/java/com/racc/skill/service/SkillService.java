@@ -22,6 +22,7 @@ import java.util.stream.Stream;
  *   - skill.md              : 主文档（含 YAML frontmatter）
  *   - .disabled             : 存在表示禁用
  *   - .copy-enabled         : 存在表示允许复制
+ *   - .tag                  : 内容为人工维护的分类标识（用于左侧列表分组）
  */
 @Service
 public class SkillService {
@@ -77,6 +78,9 @@ public class SkillService {
 
         // 构建文件树
         detail.setFileTree(buildFileTree(skillDir, ""));
+
+        // 读取分类标识（人工维护，存于 .tag 文件）
+        detail.setTag(readTag(skillDir));
 
         return detail;
     }
@@ -308,6 +312,7 @@ public class SkillService {
         // 标记文件
         summary.setDisabled(Files.exists(dir.toPath().resolve(".disabled")));
         summary.setCopyEnabled(Files.exists(dir.toPath().resolve(".copy-enabled")));
+        summary.setTag(readTag(dir.toPath()));
 
         // Git 信息
         summary.setCommitId(execGit(dir.toPath(), "log", "--oneline", "-1"));
@@ -318,6 +323,52 @@ public class SkillService {
         summary.setReferenceCount(0); // 引用计数，后续可扩展
 
         return summary;
+    }
+
+    // ==================== 分类标识（人工维护，存于 .tag 文件） ====================
+
+    private static final Path TAG_FILE = Path.of(".tag");
+
+    /** 读取标识；文件不存在或为空时返回 null（前端归入「未分类」） */
+    private String readTag(Path skillDir) {
+        try {
+            Path f = skillDir.resolve(TAG_FILE);
+            if (!Files.exists(f)) return null;
+            String v = Files.readString(f, StandardCharsets.UTF_8).trim();
+            return v.isEmpty() ? null : v;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** 设置标识；tag 为空/null 时删除 .tag 文件（即取消分类） */
+    public void setSkillTag(String name, String tag) {
+        Path dir = resolveSkillDir(name);
+        if (!Files.exists(dir)) {
+            throw new NoSuchElementException("技能不存在: " + name);
+        }
+        try {
+            Path f = dir.resolve(TAG_FILE);
+            if (tag == null || tag.isBlank()) {
+                Files.deleteIfExists(f);
+            } else {
+                Files.writeString(f, tag.trim(), StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("保存标识失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 全量标识列表（去重、排序），供前端下拉建议 */
+    public List<String> listTags() {
+        File[] dirs = skillsBaseDir.toFile().listFiles(File::isDirectory);
+        if (dirs == null) return Collections.emptyList();
+        TreeSet<String> tags = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (File d : dirs) {
+            String t = readTag(d.toPath());
+            if (t != null && !t.isBlank()) tags.add(t);
+        }
+        return new ArrayList<>(tags);
     }
 
     private Path resolveSkillDir(String name) {

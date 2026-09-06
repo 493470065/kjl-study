@@ -854,6 +854,11 @@ async function loadWorkflows() {
   try {
     const res = await getWorkflows()
     workflows.value = res.data as WorkflowItem[]
+    // 默认打开第一个工作流：未选中任何工作流时自动加载列表第一项
+    const list = workflows.value
+    if (list.length && !currentWorkflow.value) {
+      await loadWorkflow(list[0])
+    }
   } catch {
     ElMessage.error('加载工作流列表失败')
   } finally {

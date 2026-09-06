@@ -34,7 +34,7 @@
               <template #default="{ row }">
                 <div v-if="row.remainItems && row.remainItems.length" class="remain-wrap">
                   <div class="remain-title">未完结工单明细（{{ row.remainItems.length }} 条）</div>
-                  <el-table :data="row.remainItems" size="small" max-height="320" border>
+                  <el-table :data="row.remainItems" size="small" border>
                     <el-table-column prop="id" label="ID" width="90" />
                     <el-table-column prop="title" label="标题" min-width="260" show-overflow-tooltip />
                     <el-table-column prop="type" label="类型" width="100" />
@@ -128,7 +128,7 @@
             </div>
 
             <!-- FPI 明细表（功能点粒度，技能数据源，分页每页默认 20 条） -->
-            <el-table :data="pagedFpiRows(lineKey)" border size="small" max-height="520">
+            <el-table :data="pagedFpiRows(lineKey)" border size="small">
               <el-table-column prop="code" label="功能点编码" width="170" show-overflow-tooltip />
               <el-table-column prop="name" label="功能点名称" min-width="180" show-overflow-tooltip />
               <el-table-column prop="module" label="所属模块" width="120" show-overflow-tooltip />
@@ -359,7 +359,7 @@
       <!-- 三段内容以 Tab 展示 -->
       <el-tabs v-if="fpiAnalysisRow" v-model="fpiAnalysisTab">
         <el-tab-pane :label="`需求（${analysisReqItems(fpiAnalysisRow).length}）`" name="req">
-          <el-table :data="analysisReqItems(fpiAnalysisRow)" border size="small" max-height="320">
+          <el-table :data="analysisReqItems(fpiAnalysisRow)" border size="small">
             <el-table-column prop="id" label="工单号" width="100" />
             <el-table-column prop="title" label="标题" min-width="300" show-overflow-tooltip />
             <el-table-column prop="state" label="状态" width="95" />
@@ -370,7 +370,7 @@
           </el-table>
         </el-tab-pane>
         <el-tab-pane :label="`软质（${analysisSoftItems(fpiAnalysisRow).length}）`" name="soft">
-          <el-table :data="analysisSoftItems(fpiAnalysisRow)" border size="small" max-height="320">
+          <el-table :data="analysisSoftItems(fpiAnalysisRow)" border size="small">
             <el-table-column prop="id" label="工单号" width="100" />
             <el-table-column prop="title" label="标题" min-width="300" show-overflow-tooltip />
             <el-table-column prop="state" label="状态" width="95" />
@@ -452,7 +452,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { Search, RefreshLeft, Refresh, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -607,8 +607,10 @@ function scrollToChapter(i: number) {
 // ===== 深挖报告 mermaid 流程图渲染（代码块 → SVG 图；按需动态加载，不拖慢页面首屏） =====
 type MermaidApi = { initialize: (cfg: unknown) => void; render: (id: string, code: string) => Promise<{ svg: string }> }
 let mermaidApi: MermaidApi | null = null
+let mermaidLoadFailed = false
 async function ensureMermaid(): Promise<MermaidApi | null> {
   if (mermaidApi) return mermaidApi
+  if (mermaidLoadFailed) return null
   try {
     const mod = await import('mermaid')
     const m = (mod.default || mod) as MermaidApi
@@ -637,10 +639,20 @@ async function ensureMermaid(): Promise<MermaidApi | null> {
     })
     mermaidApi = m
     return m
-  } catch (e) { return null /* 加载失败降级保留代码块 */ }
+  } catch { mermaidLoadFailed = true; return null /* 加载失败降级保留代码块 */ }
 }
 let fpiMmdSeq = 0
+let fpiMmdRendering = false
+let fpiMmdTimer: number | undefined
+
+/** 延迟重试渲染：等当前一轮渲染结束 / 等短暂 DOM 稳定后统一补渲染 */
+function scheduleFpiMermaid(delay = 150) {
+  if (fpiMmdTimer) window.clearTimeout(fpiMmdTimer)
+  fpiMmdTimer = window.setTimeout(() => { void renderFpiMermaid() }, delay)
+}
+
 async function renderFpiMermaid() {
+  if (fpiMmdRendering) { scheduleFpiMermaid(); return } // 渲染中：结束后由定时器补渲染剩余图
   const host = document.querySelector('.fpi-analysis-body')
   if (!host) return
   const wraps = host.querySelectorAll('.code-block-wrapper')
@@ -653,23 +665,65 @@ async function renderFpiMermaid() {
   if (!hasMmd) return
   const m = await ensureMermaid()
   if (!m) return
-  for (const w of Array.from(wraps)) {
-    if (w.getAttribute('data-mmd') === '1') continue
-    const lang = w.querySelector('.code-lang')?.textContent?.trim()
-    if (lang !== 'mermaid') continue
-    const code = w.querySelector('pre code')?.textContent || ''
-    if (!code.trim()) continue
-    w.setAttribute('data-mmd', '1')
-    try {
-      const { svg } = await m.render(`fpi-mmd-${Date.now()}-${fpiMmdSeq++}`, code)
-      const div = document.createElement('div')
-      div.className = 'fpi-mermaid'
-      div.innerHTML = svg
-      w.replaceWith(div)
-    } catch { w.removeAttribute('data-mmd') /* 渲染失败保留原代码块 */ }
+  fpiMmdRendering = true
+  try {
+    for (const w of Array.from(wraps)) {
+      if (w.getAttribute('data-mmd') === '1') continue
+      const lang = w.querySelector('.code-lang')?.textContent?.trim()
+      if (lang !== 'mermaid') continue
+      const code = w.querySelector('pre code')?.textContent || ''
+      if (!code.trim()) continue
+      w.setAttribute('data-mmd', '1')
+      const id = `fpi-mmd-${Date.now()}-${fpiMmdSeq++}`
+      try {
+        const { svg } = await m.render(id, code)
+        replaceWithMermaid(w, svg)
+      } catch {
+        // 首次渲染失败：LLM 生成的 mermaid 常有「标签内括号/箭头未加引号」等语法问题，修复后重试一次
+        try {
+          const { svg } = await m.render(id + '-fix', sanitizeMermaid(code))
+          replaceWithMermaid(w, svg)
+        } catch { w.removeAttribute('data-mmd') /* 仍失败保留原代码块 */ }
+      }
+    }
+  } finally {
+    fpiMmdRendering = false
   }
 }
-watch([fpiAnalysisText, fpiAnalysisVisible], () => { nextTick(renderFpiMermaid) })
+
+function replaceWithMermaid(w: Element, svg: string) {
+  const div = document.createElement('div')
+  div.className = 'fpi-mermaid'
+  div.innerHTML = svg
+  w.replaceWith(div)
+}
+
+/**
+ * 修复 LLM 生成 mermaid 的常见语法问题：节点/边标签含括号、箭头等特殊字符未加引号会直接渲染失败。
+ * 仅作为渲染失败后的重试兜底，不用于首次渲染（避免影响本就合法的图表）。
+ */
+function sanitizeMermaid(code: string): string {
+  let s = code.replace(/```[a-z]*/gi, '')
+  // 节点文本加双引号：A[文本] A(文本) A((文本)) A([文本]) A{文本} A((文本)) 等
+  s = s.replace(/([\[{(]{1,2})([^\[\]{}()"\n]*?)([\]})]{1,2})/g, (full, open: string, text: string, close: string) => {
+    const t = text.trim()
+    if (!t || /^".*"$/.test(t) || /^'.*'$/.test(t)) return full
+    return `${open}"${t}"${close}`
+  })
+  // 边标签加双引号：-->|文本|
+  s = s.replace(/\|([^|\n]*)\|/g, (full, text: string) => {
+    const t = text.trim()
+    if (!t || /^".*"$/.test(t)) return full
+    return `|"${t}"|`
+  })
+  return s
+}
+
+watch([fpiAnalysisText, fpiAnalysisVisible], () => { nextTick(scheduleFpiMermaid) })
+
+// DOM 兜底监听：v-html 重渲染 / 抽屉重开等导致的 DOM 重建不经过响应式文本变化，
+// 仅靠 watch 会漏渲染（流程图丢失的主因）。观察到列表区 DOM 变化后补渲染。
+let fpiMmdObserver: MutationObserver | null = null
 // ===== 合理性设计分析：技能配置（localStorage 持久化） =====
 const LS_ANA_KEY = 'reqcollect.analysis.v1'
 const anaCfg = reactive({ skillName: '', entry: '', argumentsText: '' })
@@ -835,6 +889,18 @@ onMounted(() => {
   loadSkills()
   loadResults() // 仅恢复上次归集结果，不自动拉取
   loadAnaCfg() // 恢复合理性设计分析技能配置
+  // mermaid 流程图兜底：监听分析正文 DOM 变化（v-html 重渲染/抽屉重开），补渲染丢失的流程图
+  fpiMmdObserver = new MutationObserver(() => {
+    if (!fpiAnalysisVisible.value) return
+    scheduleFpiMermaid()
+  })
+  fpiMmdObserver.observe(document.body, { childList: true, subtree: true })
+})
+
+onBeforeUnmount(() => {
+  fpiMmdObserver?.disconnect()
+  fpiMmdObserver = null
+  if (fpiMmdTimer) window.clearTimeout(fpiMmdTimer)
 })
 
 /** 切 Tab：仅展示该线上一次归集的数据（缓存），不自动拉取 */

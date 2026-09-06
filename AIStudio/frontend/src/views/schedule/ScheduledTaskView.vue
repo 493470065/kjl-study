@@ -124,10 +124,10 @@
     <el-dialog v-model="createDialogVisible" title="新建定时任务" width="520px">
       <el-form :model="createForm" label-width="100px">
         <el-form-item label="任务类型" required>
-          <el-select v-model="createForm.typeCode" placeholder="选择自动化管理中已启用的任务类型" style="width: 100%">
+          <el-select v-model="createForm.typeCode" placeholder="选择自动化流程中已启用的任务类型" style="width: 100%">
             <el-option v-for="t in taskTypes" :key="t.code" :label="`${t.name}（${t.code}）`" :value="t.code" />
           </el-select>
-          <div class="cron-hint">任务标识自动生成为 <code>automate:{{ createForm.typeCode || '<code>' }}</code>；每次触发会发起一次该类型的自动化执行，进度到自动化管理查看</div>
+          <div class="cron-hint">任务标识自动生成为 <code>automate:{{ createForm.typeCode || '<code>' }}</code>；每次触发会发起一次该类型的自动化执行，进度到自动化流程查看</div>
         </el-form-item>
         <el-form-item label="任务名称" required>
           <el-input v-model="createForm.name" placeholder="如 数据缓存刷新" />

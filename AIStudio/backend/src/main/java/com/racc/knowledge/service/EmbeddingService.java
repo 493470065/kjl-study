@@ -11,13 +11,17 @@ import java.util.Arrays;
 /**
  * 文本向量化服务（语义检索的底层能力）。
  *
- * 基于 Spring AI 的 EmbeddingModel；当未配置可用的 LLM Provider（无嵌入模型）时，
- * 返回 null，上层检索自动降级为关键词检索，保证平台在「无 LLM」环境下仍可正常使用。
+ * 优先使用 Spring AI 注入的 EmbeddingModel（配置了 embedding 端点即远程向量化）；
+ * 未配置或调用失败时，自动降级为「本地特征哈希向量化」——字符 n-gram 哈希到固定维度，
+ * 无任何外部依赖，保证平台在「无 LLM / 网关无 embedding 端点」环境下向量检索始终可用。
  */
 @Service
 public class EmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingService.class);
+
+    /** 本地向量化维度（所有本地向量统一此维度，保证余弦可比） */
+    public static final int LOCAL_DIM = 256;
 
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
 
@@ -25,25 +29,76 @@ public class EmbeddingService {
         this.embeddingModelProvider = embeddingModelProvider;
     }
 
-    /** 是否具备向量化能力（已注入可用的 EmbeddingModel） */
-    public boolean isAvailable() {
+    /** 是否具备远程向量化能力（已注入可用的 EmbeddingModel） */
+    public boolean hasRemoteModel() {
         return embeddingModelProvider.getIfAvailable() != null;
     }
 
+    /** 向量检索是否可用：远程模型或本地兜底任一存在即 true（本地兜底恒可用） */
+    public boolean isAvailable() {
+        return true;
+    }
+
+    /** 当前向量化来源描述（供知识库状态展示） */
+    public String providerName() {
+        return hasRemoteModel() ? "远程模型" : "本地向量化";
+    }
+
     /**
-     * 将文本转为向量。失败或未配置时返回 null。
+     * 将文本转为向量。优先远程模型，失败或未配置时本地兜底。
      */
     public float[] embed(String text) {
         if (text == null || text.isBlank()) return null;
         EmbeddingModel model = embeddingModelProvider.getIfAvailable();
-        if (model == null) return null;
-        try {
-            float[] vector = model.embed(text);
-            return (vector != null && vector.length > 0) ? vector : null;
-        } catch (Exception e) {
-            log.warn("文本向量化失败（可能未配置嵌入模型）：{}", e.getMessage());
-            return null;
+        if (model != null) {
+            try {
+                float[] vector = model.embed(text);
+                if (vector != null && vector.length > 0) return vector;
+            } catch (Exception e) {
+                log.warn("远程文本向量化失败，降级本地向量化：{}", e.getMessage());
+            }
         }
+        return localEmbed(text);
+    }
+
+    /**
+     * 本地向量化：字符 unigram + bigram 特征哈希（hashing trick，带符号位抑制碰撞偏移），
+     * TF 加权后 L2 归一化。中文 bigram 区分度好，余弦相似度对近义/包含关系有合理的排序能力。
+     */
+    public static float[] localEmbed(String text) {
+        if (text == null || text.isBlank()) return null;
+        String t = text.toLowerCase().replaceAll("\\s+", " ");
+        float[] vec = new float[LOCAL_DIM];
+        for (int i = 0; i < t.length(); i++) {
+            addFeature(vec, t.charAt(i), 1.0f);
+            if (i + 1 < t.length()) {
+                addFeature(vec, t.charAt(i), t.charAt(i + 1), 1.6f);
+            }
+        }
+        double norm = 0;
+        for (float v : vec) norm += v * v;
+        if (norm > 0) {
+            float inv = (float) (1.0 / Math.sqrt(norm));
+            for (int i = 0; i < LOCAL_DIM; i++) vec[i] *= inv;
+        }
+        return vec;
+    }
+
+    /** 单字特征 */
+    private static void addFeature(float[] vec, char c, float weight) {
+        int h = c * 31 + 7;
+        vec[Math.floorMod(h, LOCAL_DIM)] += signOf(h) * weight;
+    }
+
+    /** 二元组特征（char bigram） */
+    private static void addFeature(float[] vec, char a, char b, float weight) {
+        int h = a * 1315423911 + b * 31 + 17;
+        vec[Math.floorMod(h, LOCAL_DIM)] += signOf(h) * weight;
+    }
+
+    /** 由哈希值派生稳定符号位，减少特征碰撞带来的向量偏移 */
+    private static float signOf(int h) {
+        return ((h >>> 16) & 1) == 0 ? 1f : -1f;
     }
 
     /**

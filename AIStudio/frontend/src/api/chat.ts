@@ -67,10 +67,10 @@ export interface StreamOptions {
 const FIRST_BYTE_TIMEOUT_MS = 60000
 
 export const chatApi = {
-  /** Send a message (non-streaming) */
+  /** Send a message (non-streaming)。LLM 单次调用实测 ~100s+，全局 30s 会误杀；280s 仍低于后端 300s 读超时 */
   send(message: string, projectId?: string, conversationId?: string, agentName?: string) {
     return http
-      .post('/chat/message', { message, projectId, conversationId, agentName })
+      .post('/chat/message', { message, projectId, conversationId, agentName }, { timeout: 280000 })
       .then(r => r.data)
   },
 
@@ -94,6 +94,7 @@ export const chatApi = {
     }, FIRST_BYTE_TIMEOUT_MS)
 
     let fullText = ''
+    let firstByteReceived = false
     try {
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
@@ -130,7 +131,6 @@ export const chatApi = {
       const decoder = new TextDecoder()
       // 行缓冲：SSE 数据行可能被拆到多次 read() 中，须拼接完整行再解析
       let buffer = ''
-      let firstByteReceived = false
 
     /** 处理单行 SSE 数据，返回 true 表示流已终结（done/error/[DONE]） */
     const processLine = (rawLine: string): boolean => {

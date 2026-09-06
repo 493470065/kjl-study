@@ -25,3 +25,8 @@ Thumbs.db
 
 # ===== 前端构建缓存 =====
 **/*.tsbuildinfo
+
+# ===== 本次构建日志（不入库）=====
+AIStudio/backend-restart.out
+AIStudio/backend/build.out
+AIStudio/backend/build.err

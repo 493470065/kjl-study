@@ -152,7 +152,7 @@
               <span class="option-code">{{ t.code }}</span>
             </el-option>
           </el-select>
-          <div class="form-hint">任务类型来自自动化管理（{{ taskTypes.length }} 个）；不关联也可直接创建</div>
+          <div class="form-hint">任务类型来自自动化流程（{{ taskTypes.length }} 个）；不关联也可直接创建</div>
         </el-form-item>
         <el-form-item label="运行模式" prop="mode">
           <el-radio-group v-model="createForm.mode">
@@ -355,7 +355,7 @@ const createRules: FormRules = {
   ]
 }
 
-/** 关联任务类型下拉数据（自动化管理的任务类型，仅启用项） */
+/** 关联任务类型下拉数据（自动化流程的任务类型，仅启用项） */
 const taskTypes = ref<AutomateTaskType[]>([])
 const taskTypesLoading = ref(false)
 

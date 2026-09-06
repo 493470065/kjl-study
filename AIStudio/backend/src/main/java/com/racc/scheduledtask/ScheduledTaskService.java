@@ -294,7 +294,7 @@ public class ScheduledTaskService {
                 req.setParams(parseParams(task.getParamsJson()));
                 Long pipelineId = withSystemUser(() -> pipelineService.start(req).getId());
                 status = "SUCCESS";
-                message = "已启动自动化任务: 类型=" + typeCode + ", 执行实例=" + pipelineId + "（进度见自动化管理）";
+                message = "已启动自动化任务: 类型=" + typeCode + ", 执行实例=" + pipelineId + "（进度见自动化流程）";
             } else {
                 // 约定外的 taskKey 暂无执行体，如实记为跳过
                 status = "SKIPPED";

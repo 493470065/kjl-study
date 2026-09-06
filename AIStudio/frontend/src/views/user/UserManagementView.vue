@@ -184,7 +184,7 @@ const menuOptions = [
   { label: 'TFS 看板', path: '/tfs-dashboard' },
   { label: '知识库', path: '/knowledge' },
   { label: 'MCP 管理', path: '/mcp' },
-  { label: '自动化管理', path: '/automate' },
+  { label: '自动化流程', path: '/automate' },
   { label: 'Agent 管理', path: '/agents' },
   { label: 'Skill 管理', path: '/skills' },
   { label: '沙箱管理', path: '/sandbox' },

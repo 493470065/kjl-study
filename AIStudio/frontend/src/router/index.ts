@@ -50,6 +50,12 @@ const router = createRouter({
       meta: { title: "需求归集" }
     },
     {
+      path: "/i18n-special",
+      name: "i18nSpecial",
+      component: () => import("@/views/i18n/I18nSpecialView.vue"),
+      meta: { title: "多语专项" }
+    },
+    {
       path: "/todos",
       name: "todos",
       component: () => import("@/views/todo/TodoView.vue"),
@@ -71,7 +77,7 @@ const router = createRouter({
       path: "/automate",
       name: "automate",
       component: () => import("@/views/automate/AutomateView.vue"),
-      meta: { title: "自动化管理" }
+      meta: { title: "自动化流程" }
     },
     {
       path: "/agents",
