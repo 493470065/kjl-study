@@ -6,7 +6,7 @@
     </template>
 
     <el-row :gutter="16">
-      <el-col :span="8" v-for="agent in agents" :key="agent.name">
+      <el-col :span="8" class="agent-col" v-for="agent in agents" :key="agent.name">
         <el-card class="agent-card" shadow="hover">
           <template #header>
             <div class="card-header">
@@ -63,9 +63,9 @@
           </div>
           <div class="card-actions">
             <el-button size="small" type="primary" @click="openRunDialog(agent)">运行</el-button>
-            <el-button size="small" @click="viewDetail(agent.name)">详情</el-button>
-            <el-button size="small" type="warning" @click="openEditDialog(agent)">修改</el-button>
-            <el-button size="small" type="danger" @click="handleDelete(agent.name)">删除</el-button>
+            <el-button size="small" plain @click="viewDetail(agent.name)">详情</el-button>
+            <el-button size="small" plain type="warning" @click="openEditDialog(agent)">修改</el-button>
+            <el-button size="small" plain type="danger" @click="handleDelete(agent.name)">删除</el-button>
           </div>
         </el-card>
       </el-col>
@@ -931,8 +931,25 @@ onMounted(() => {
 
 
 
-.agent-card {
+/* ===== 卡片等高布局 =====
+   el-col 设为 flex 容器（align-items 默认 stretch），
+   卡片 width:100% + 内部 flex 纵向布局 → 同一行卡片等高；
+   tags-section flex:1 弹性填充 → 操作按钮统一沉底对齐 */
+.agent-col {
+  display: flex;
   margin-bottom: 16px;
+}
+
+.agent-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .card-header {
@@ -950,11 +967,20 @@ onMounted(() => {
   color: #666;
   font-size: 13px;
   margin-bottom: 12px;
-  min-height: 20px;
+  /* 描述最多两行，超出省略：削弱内容长短差异，减少卡片参差感 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
+  min-height: 40px; /* 两行基准高度，无描述/单行描述的卡片也占位对齐 */
 }
 
 .tags-section {
   margin-bottom: 12px;
+  /* 弹性填充剩余空间：把操作按钮压到卡片底部，多卡片横向对齐 */
+  flex: 1;
 }
 
 .tag-row {
@@ -983,8 +1009,15 @@ onMounted(() => {
 .card-actions {
   display: flex;
   gap: 8px;
+  margin-top: auto; /* 双保险：配合 tags-section flex:1，确保按钮沉底对齐 */
   border-top: 1px solid #ede8da;
   padding-top: 12px;
+}
+
+/* 四个按钮等宽铺满底部一行；el-button 相邻默认 12px 左边距会破坏 gap 节奏，统一清零 */
+.card-actions :deep(.el-button) {
+  flex: 1;
+  margin-left: 0;
 }
 
 .prompt-section, .skills-section {

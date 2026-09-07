@@ -19,7 +19,9 @@
           <div class="type-card__desc">{{ t.description || '暂无描述' }}</div>
           <div class="type-card__binding">
             <el-tag v-if="t.skillName" size="small" type="info">Skill: {{ t.skillName }}</el-tag>
-            <el-tag v-else-if="t.workflowDefinitionId" size="small" type="info">工作流 #{{ t.workflowDefinitionId }}</el-tag>
+            <el-tag v-else-if="t.workflowDefinitionId" size="small" type="info" class="type-card__wf-tag">
+              工作流: {{ workflowName(t.workflowDefinitionId) }}
+            </el-tag>
             <el-tag v-if="t.model" size="small" effect="plain" style="margin-left: 4px">{{ t.model }}</el-tag>
             <span v-else-if="t.skillName" class="type-card__model-hint">（全局模型）</span>
           </div>
@@ -50,8 +52,10 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
 import { Setting } from '@element-plus/icons-vue'
 import type { AutomateTaskType } from '@/api/automate'
+import { getWorkflows } from '@/api/workflow'
 
 defineProps<{
   taskTypes: AutomateTaskType[]
@@ -61,6 +65,25 @@ defineEmits<{
   (e: 'launch', type: AutomateTaskType | null): void
   (e: 'manage'): void
 }>()
+
+/* 工作流 id -> name 映射：卡片绑定标签显示名称而非裸 ID */
+const workflows = ref<{ id: number; name: string }[]>([])
+const wfNameMap = computed(() => {
+  const m = new Map<number, string>()
+  for (const w of workflows.value) m.set(w.id, w.name)
+  return m
+})
+function workflowName(id: number): string {
+  return wfNameMap.value.get(id) || `#${id}`
+}
+
+onMounted(async () => {
+  try {
+    workflows.value = (await getWorkflows()).data || []
+  } catch {
+    /* 加载失败时回退显示 #id，不阻塞卡片渲染 */
+  }
+})
 </script>
 
 <style scoped>
@@ -132,6 +155,13 @@ defineEmits<{
 .type-card__binding {
   margin: 8px 0;
   min-height: 22px;
+}
+
+/* 工作流名称可能较长：限制标签宽度，超出省略 */
+.type-card__wf-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .type-card__model-hint {

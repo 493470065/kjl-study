@@ -104,8 +104,8 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 编辑 Cron 弹窗 -->
-    <el-dialog v-model="cronDialogVisible" title="编辑定时任务" width="480px">
+    <!-- 编辑 Cron 弹窗（同样 destroy-on-close：避免编辑不同任务时选择器残留上一任务的内部状态） -->
+    <el-dialog v-model="cronDialogVisible" title="编辑定时任务" width="480px" destroy-on-close>
       <el-form :model="cronForm" label-width="100px">
         <el-form-item label="任务名称">
           <span>{{ cronForm.name }}</span>
@@ -120,14 +120,15 @@
       </template>
     </el-dialog>
 
-    <!-- 新建任务弹窗 -->
-    <el-dialog v-model="createDialogVisible" title="新建定时任务" width="520px">
+    <!-- 新建任务弹窗。destroy-on-close 必须保留：SchedulePicker 仅在挂载时回写一次 cron，
+         弹窗复用实例会导致重开后 cronExpression 实际为空但界面显示已有表达式 -->
+    <el-dialog v-model="createDialogVisible" title="新建定时任务" width="520px" destroy-on-close>
       <el-form :model="createForm" label-width="100px">
         <el-form-item label="任务类型" required>
           <el-select v-model="createForm.typeCode" placeholder="选择自动化流程中已启用的任务类型" style="width: 100%">
             <el-option v-for="t in taskTypes" :key="t.code" :label="`${t.name}（${t.code}）`" :value="t.code" />
           </el-select>
-          <div class="cron-hint">任务标识自动生成为 <code>automate:{{ createForm.typeCode || '<code>' }}</code>；每次触发会发起一次该类型的自动化执行，进度到自动化流程查看</div>
+          <div class="cron-hint">任务标识自动生成为 <code>automate:{{ createForm.typeCode || '<code>' }}</code>；同一任务类型可创建多条定时任务（不同时间/参数），每次触发会发起一次该类型的自动化执行，进度到自动化流程查看</div>
         </el-form-item>
         <el-form-item label="任务名称" required>
           <el-input v-model="createForm.name" placeholder="如 数据缓存刷新" />

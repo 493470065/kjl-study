@@ -84,9 +84,23 @@
           </el-select>
         </el-form-item>
         <el-form-item v-else label="工作流">
-          <el-select v-model="draft.workflowDefinitionId" filterable clearable placeholder="选择已启用的工作流" style="width: 100%">
-            <el-option v-for="w in workflows" :key="w.id" :label="w.name" :value="w.id" />
+          <el-select
+            v-model="draft.workflowDefinitionId"
+            filterable
+            clearable
+            placeholder="选择已启用的工作流"
+            style="width: 100%"
+            @visible-change="(v: boolean) => v && refreshWorkflows()"
+          >
+            <el-option
+              v-for="w in workflowOptions"
+              :key="w.id"
+              :label="w.name + (w.enabled === false ? '（已停用）' : '')"
+              :value="w.id"
+              :disabled="w.enabled === false"
+            />
           </el-select>
+          <div class="model-tip">数据与「工作流编排」页面同源（每次展开下拉自动刷新）；停用的工作流置灰不可选</div>
         </el-form-item>
 
         <el-form-item v-if="bindingMode === 'skill'" label="LLM 模型">
@@ -140,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useConfirmDelete } from '@/composables/useConfirmDelete'
@@ -164,8 +178,27 @@ interface FieldDraft extends AutomateFormField {
 const types = ref<AutomateTaskType[]>([])
 const loading = ref(false)
 const skills = ref<SkillSummary[]>([])
-const workflows = ref<{ id: number; name: string; enabled: boolean }[]>([])
+const allWorkflows = ref<{ id: number; name: string; enabled: boolean }[]>([])
 const providers = ref<LlmProvider[]>([])
+
+/* 下拉选项 = 已启用工作流 + 当前已绑定但已停用的工作流（置灰展示，保证绑定关系可见） */
+const workflowOptions = computed(() => {
+  const list = allWorkflows.value.filter(x => x.enabled !== false).map(x => ({ ...x }))
+  const cur = draft.value?.workflowDefinitionId
+  if (cur && !list.some(w => w.id === cur)) {
+    const disabledOne = allWorkflows.value.find(w => w.id === cur)
+    if (disabledOne) list.push({ ...disabledOne })
+  }
+  return list
+})
+
+async function refreshWorkflows() {
+  try {
+    allWorkflows.value = (await getWorkflows()).data || []
+  } catch {
+    // 保留旧数据；错误由统一出口提示
+  }
+}
 
 const editing = ref(false)
 const isEdit = ref(false)
@@ -193,15 +226,14 @@ function emptyField(): FieldDraft {
 async function loadAll() {
   loading.value = true
   try {
-    const [t, s, w, p] = await Promise.all([
+    const [t, s, , p] = await Promise.all([
       taskTypeApi.list(false),
       skillApi.listSkills().catch(() => [] as SkillSummary[]),
-      getWorkflows().then(r => r.data).catch(() => []),
+      refreshWorkflows(),
       llmProviderApi.listProviders().catch(() => [] as LlmProvider[])
     ])
     types.value = t
     skills.value = (s || []).filter((x: SkillSummary) => !x.disabled)
-    workflows.value = (w || []).filter((x: any) => x.enabled !== false)
     providers.value = (p || []).filter((x: LlmProvider) => x.enabled)
     editing.value = false
   } catch (e: any) {
@@ -212,7 +244,9 @@ async function loadAll() {
 }
 
 function workflowName(id: number) {
-  return workflows.value.find(w => w.id === id)?.name || ('#' + id)
+  // 列表「绑定」列用全量数据解析名称：已停用的工作流也能显示名字而非 #id
+  const w = allWorkflows.value.find(x => x.id === id)
+  return w ? w.name + (w.enabled === false ? '（已停用）' : '') : ('#' + id)
 }
 
 function openCreate() {
@@ -227,7 +261,8 @@ function openCreate() {
 function openEdit(row: AutomateTaskType) {
   isEdit.value = true
   editingId.value = row.id
-  bindingMode.value = row.skillName ? 'skill' : 'workflow'
+  // 后端执行优先级：workflowDefinitionId 存在即走工作流分支，编辑态据此还原绑定模式
+  bindingMode.value = row.workflowDefinitionId ? 'workflow' : 'skill'
   draft.value = {
     code: row.code,
     name: row.name,

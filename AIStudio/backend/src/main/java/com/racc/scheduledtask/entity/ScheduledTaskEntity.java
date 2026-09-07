@@ -14,7 +14,11 @@ public class ScheduledTaskEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "task_key", nullable = false, unique = true, length = 128)
+    /**
+     * 任务标识 automate:<typeCode>。同一任务类型允许多条定时任务（不同 cron/参数），
+     * 因此不设唯一约束；调度快照与取消均按任务 id 管理，勿再以 taskKey 作为唯一键。
+     */
+    @Column(name = "task_key", nullable = false, length = 128)
     private String taskKey;
 
     @Column(nullable = false, length = 128)

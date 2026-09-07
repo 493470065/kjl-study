@@ -44,7 +44,7 @@ public class ScheduledTaskService {
     private final PipelineService pipelineService;
     private final ObjectMapper objectMapper;
 
-    /** 已注册任务的 future 快照（taskKey -> future） */
+    /** 已注册任务的 future 快照（任务 id 字符串 -> future；taskKey 不再唯一，勿作 key） */
     private final ConcurrentHashMap<String, ScheduledFuture<?>> scheduledFutures = new ConcurrentHashMap<>();
 
     public ScheduledTaskService(ScheduledTaskRepository taskRepository,
@@ -82,9 +82,7 @@ public class ScheduledTaskService {
                 || !taskKey.substring(AUTOMATE_PREFIX.length()).matches("[A-Za-z0-9_-]+")) {
             throw new IllegalArgumentException("任务标识须为 automate:<自动化任务类型code>，如 automate:req-analysis");
         }
-        if (taskRepository.findByTaskKey(taskKey).isPresent()) {
-            throw new IllegalArgumentException("任务标识已存在: " + taskKey);
-        }
+        // 同一任务类型允许多条定时任务（不同 cron/参数），不再按 taskKey 拦截重复
         String name = trimOrNull((String) body.get("name"));
         if (name == null) {
             throw new IllegalArgumentException("任务名称不能为空");
@@ -171,7 +169,7 @@ public class ScheduledTaskService {
         task = taskRepository.save(task);
 
         // 重新注册
-        cancelTask(task.getTaskKey());
+        cancelTask(task.getId());
         if (Boolean.TRUE.equals(task.getEnabled()) && task.getCronExpression() != null) {
             registerTask(task);
         }
@@ -189,7 +187,7 @@ public class ScheduledTaskService {
     public void deleteTask(Long id) {
         ScheduledTaskEntity task = taskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("任务不存在: " + id));
-        cancelTask(task.getTaskKey());
+        cancelTask(task.getId());
         taskRepository.delete(task);
         log.info("定时任务 [{}] 已删除", task.getTaskKey());
     }
@@ -231,17 +229,18 @@ public class ScheduledTaskService {
         for (Map.Entry<String, ScheduledFuture<?>> entry : scheduledFutures.entrySet()) {
             ScheduledFuture<?> future = entry.getValue();
             boolean hasData = future != null && !future.isCancelled();
-            status.put(entry.getKey(), Map.of(
-                    "updatedAt", null,
-                    "hasData", hasData
-            ));
+            // 快照按任务 id 存储，展示时还原为 taskKey（同 key 多任务时合并展示）
+            String displayKey = taskRepository.findById(Long.valueOf(entry.getKey()))
+                    .map(ScheduledTaskEntity::getTaskKey).orElse(entry.getKey());
+            // Map.of 不允许 null 值：updatedAt 为空时直接省略该键，避免 NPE
+            status.put(displayKey, Map.of("hasData", hasData));
         }
         return status;
     }
 
     // ========== 内部 ==========
 
-    /** 注册一个任务到 TaskScheduler（cron 驱动） */
+    /** 注册一个任务到 TaskScheduler（cron 驱动）；快照与运行时回查均按任务 id，支持同 taskKey 多任务 */
     private void registerTask(ScheduledTaskEntity task) {
         String key = task.getTaskKey();
         try {
@@ -251,25 +250,26 @@ public class ScheduledTaskService {
             return;
         }
 
+        Long taskId = task.getId();
         Trigger trigger = new CronTrigger(task.getCronExpression());
         ScheduledFuture<?> future = taskScheduler.schedule(() -> {
-            ScheduledTaskEntity current = taskRepository.findByTaskKey(key).orElse(null);
+            ScheduledTaskEntity current = taskRepository.findById(taskId).orElse(null);
             if (current == null || !Boolean.TRUE.equals(current.getEnabled())) {
                 return;
             }
             executeTask(current);
         }, trigger);
 
-        scheduledFutures.put(key, future);
-        log.info("定时任务 [{}] 已注册, cron={}", key, task.getCronExpression());
+        scheduledFutures.put(String.valueOf(taskId), future);
+        log.info("定时任务 [{}#{}] 已注册, cron={}", key, taskId, task.getCronExpression());
     }
 
-    /** 取消已注册的任务 */
-    private void cancelTask(String taskKey) {
-        ScheduledFuture<?> future = scheduledFutures.remove(taskKey);
+    /** 取消已注册的任务（按任务 id） */
+    private void cancelTask(Long taskId) {
+        ScheduledFuture<?> future = scheduledFutures.remove(String.valueOf(taskId));
         if (future != null) {
             future.cancel(false);
-            log.info("定时任务 [{}] 已取消", taskKey);
+            log.info("定时任务 #{} 已取消", taskId);
         }
     }
 
