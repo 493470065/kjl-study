@@ -108,12 +108,14 @@ function parseSSEBuffer(
 export const agentRuntimeApi = {
   /**
    * 向 Agent 发送消息（非流式）。
+   * @param timeoutMs 可选超时（毫秒），不传用全局默认（30s）。
+   *                  重场景（如评估类 Agent 调 LLM 多轮）应显式传大值，如 300_000。
    */
-  chat(agentName: string, message: string, conversationId?: string) {
+  chat(agentName: string, message: string, conversationId?: string, timeoutMs?: number) {
     return http.post<AgentChatResponse>(`/agents/${agentName}/chat`, {
       message,
       conversationId
-    }).then(r => r.data)
+    }, { timeout: timeoutMs }).then(r => r.data)
   },
 
   /**

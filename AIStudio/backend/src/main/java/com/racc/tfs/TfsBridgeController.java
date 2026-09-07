@@ -39,10 +39,19 @@ public class TfsBridgeController {
     private volatile StatusCache statusCache;
     private static final long STATUS_TTL_MS = 60_000L;
 
-    /** query / following 结果缓存：避免切 Tab/刷新/重进重复查 TFS（单次 4~12s），120s TTL */
+    /** query / following 结果缓存：新鲜期内直接回；过期后立即回旧值 + 后台静默刷新（SWR），
+     *  避免缓存过期后切 Tab 需现场等 TFS 查询（实测可达 50s+） */
     private record QueryCache(long ts, JsonNode body) {}
     private final ConcurrentHashMap<String, QueryCache> queryCache = new ConcurrentHashMap<>();
-    private static final long QUERY_TTL_MS = 120_000L;
+    private static final long FRESH_TTL_MS = 300_000L;
+    /** 后台刷新线程池 + 单飞标记（防止同一缓存键并发重复刷新） */
+    private final java.util.concurrent.ExecutorService refreshPool =
+            java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
+                Thread t = new Thread(r, "tfs-cache-refresh");
+                t.setDaemon(true);
+                return t;
+            });
+    private final java.util.Set<String> refreshing = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public TfsBridgeController(TfsBridgeService bridge, ObjectMapper objectMapper, RestTemplate restTemplate) {
         this.bridge = bridge;
@@ -79,20 +88,47 @@ public class TfsBridgeController {
         }
     }
 
-    // ---------- 3) query：两个 Tab 共用（带 120s 结果缓存）----------
+    // ---------- 3) query：两个 Tab 共用（SWR 缓存，refresh=true 时同步强刷）----------
     @GetMapping("/query")
     public ResponseEntity<JsonNode> query(@RequestParam String queryId,
-                                          @RequestParam(required = false) String project) {
+                                          @RequestParam(required = false) String project,
+                                          @RequestParam(required = false, defaultValue = "false") boolean refresh) {
         String cacheKey = "query:" + queryId + "|" + (project == null ? "" : project);
-        QueryCache c = queryCache.get(cacheKey);
-        if (c != null && System.currentTimeMillis() - c.ts < QUERY_TTL_MS) {
-            return ResponseEntity.ok(c.body);
-        }
-        try {
+        return cachedCall(cacheKey, refresh, () -> {
             Map<String, Object> args = new LinkedHashMap<>();
             args.put("queryId", queryId);   // UUID 含横线，不会被参数清洗误转数值
             if (project != null && !project.isBlank()) args.put("project", project);
-            JsonNode body = bridge.callToolJson("run_stored_query", args); // 数组透传
+            return bridge.callToolJson("run_stored_query", args); // 数组透传
+        });
+    }
+
+    // ---------- 3.5) following：当前 PAT 账号关注的工作项（跨项目，SWR 缓存）----------
+    @GetMapping("/following")
+    public ResponseEntity<JsonNode> following(
+            @RequestParam(required = false, defaultValue = "false") boolean refresh) {
+        return cachedCall("following", refresh, () -> bridge.callToolJson("following", Map.of()));
+    }
+
+    /**
+     * SWR（stale-while-revalidate）缓存统一逻辑：
+     * - 无缓存：同步取数（首次必须等）；
+     * - 新鲜期内（FRESH_TTL_MS）：直接回缓存；
+     * - 过期后：立即回旧值保证秒开，同时后台单飞刷新供下次使用；
+     * - refresh=true（前端「刷新」按钮）：绕过新鲜期，同步强刷拿最新数据。
+     */
+    private ResponseEntity<JsonNode> cachedCall(String cacheKey, boolean forceRefresh,
+                                                java.util.function.Supplier<JsonNode> fetcher) {
+        QueryCache c = queryCache.get(cacheKey);
+        long age = c == null ? Long.MAX_VALUE : System.currentTimeMillis() - c.ts;
+        if (c != null && age < FRESH_TTL_MS) {
+            return ResponseEntity.ok(c.body);
+        }
+        if (c != null && !forceRefresh) {
+            triggerRefresh(cacheKey, fetcher);
+            return ResponseEntity.ok(c.body);
+        }
+        try {
+            JsonNode body = fetcher.get();
             queryCache.put(cacheKey, new QueryCache(System.currentTimeMillis(), body));
             return ResponseEntity.ok(body);
         } catch (Exception e) {
@@ -100,20 +136,20 @@ public class TfsBridgeController {
         }
     }
 
-    // ---------- 3.5) following：当前 PAT 账号关注的工作项（跨项目，带 120s 缓存）----------
-    @GetMapping("/following")
-    public ResponseEntity<JsonNode> following() {
-        QueryCache c = queryCache.get("following");
-        if (c != null && System.currentTimeMillis() - c.ts < QUERY_TTL_MS) {
-            return ResponseEntity.ok(c.body);
-        }
-        try {
-            JsonNode body = bridge.callToolJson("following", Map.of());
-            queryCache.put("following", new QueryCache(System.currentTimeMillis(), body));
-            return ResponseEntity.ok(body);
-        } catch (Exception e) {
-            return error(502, e);
-        }
+    /** 后台单飞刷新：失败仅记日志并保留旧缓存，不打扰前端 */
+    private void triggerRefresh(String cacheKey, java.util.function.Supplier<JsonNode> fetcher) {
+        if (!refreshing.add(cacheKey)) return; // 已有刷新在跑
+        refreshPool.submit(() -> {
+            try {
+                JsonNode body = fetcher.get();
+                queryCache.put(cacheKey, new QueryCache(System.currentTimeMillis(), body));
+                log.info("TFS 缓存后台刷新完成: {}", cacheKey);
+            } catch (Exception e) {
+                log.warn("TFS 缓存后台刷新失败（保留旧数据）: {} - {}", cacheKey, e.getMessage());
+            } finally {
+                refreshing.remove(cacheKey);
+            }
+        });
     }
 
     // ---------- 4) 单个工作项 ----------

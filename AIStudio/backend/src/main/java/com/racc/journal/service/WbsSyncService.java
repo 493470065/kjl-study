@@ -160,7 +160,13 @@ public class WbsSyncService {
         return PHASE_MAP.getOrDefault(top, "前期准备");
     }
 
-    /** 拉取并解析全部 WBS 里程碑（一级+二级） */
+    /** 三级叶子任务（用于重算一级里程碑进度） */
+    private record Leaf(int top, String no, String rawStatus, int rawPct) {}
+
+    /** 一次同步的全部叶子任务与二级任务原始值 */
+    private record SheetData(List<Leaf> l3Leaves, List<Leaf> l2Rows) {}
+
+    /** 拉取并解析全部 WBS 里程碑（一级+二级，一级进度由叶子任务重算） */
     public List<Map<String, Object>> syncMilestones() throws Exception {
         Map<Long, String> grid = new HashMap<>();
         for (int start = ROW_FROM; start <= ROW_TO; start += CHUNK) {
@@ -168,6 +174,7 @@ public class WbsSyncService {
             grid.putAll(fetchChunk(start, end));
         }
 
+        SheetData sheet = collectRows(grid);
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         List<Map<String, Object>> result = new ArrayList<>();
         Set<String> usedIds = new HashSet<>();
@@ -225,10 +232,81 @@ public class WbsSyncService {
             ms.put("progress", progress);
             if (!owner.isEmpty()) ms.put("owner", owner);
             if (!note.isEmpty()) ms.put("note", note);
+            if (isL1) applyLeafProgress(ms, top, note, sheet);
             result.add(ms);
         }
-        log.info("WBS 同步完成：共 {} 条（一级+二级）", result.size());
+        log.info("WBS 同步完成：共 {} 条（一级+二级），叶子任务 {} 条", result.size(), sheet.l3Leaves().size());
         return result;
+    }
+
+    /** 收集全部三级叶子与二级任务原始值（跨越所有 L1/L2 上下文行） */
+    private SheetData collectRows(Map<Long, String> grid) {
+        List<Leaf> l3 = new ArrayList<>();
+        List<Leaf> l2 = new ArrayList<>();
+        for (int r = ROW_FROM; r <= ROW_TO; r++) {
+            String levelCell = cell(grid, r, 0);
+            if (!levelCell.equals("2") && !levelCell.equals("3")) continue;
+            String no = cell(grid, r, 1);
+            if (no.isEmpty()) continue;
+            int top;
+            try { top = Integer.parseInt(no.split("\\.")[0]); } catch (Exception e) { continue; }
+            String st = cell(grid, r, 4).trim();
+            int pv = 0;
+            Matcher mn = P_NUM.matcher(cell(grid, r, 5));
+            if (mn.find()) pv = Integer.parseInt(mn.group(1));
+            if (levelCell.equals("3")) l3.add(new Leaf(top, no, st, pv));
+            else l2.add(new Leaf(top, no, st, pv));
+        }
+        return new SheetData(l3, l2);
+    }
+
+    /** 叶子任务进度口径：完成=100；进行中=进度值（100%/未填的矛盾数据按 50% 封顶）；未开始/未填=0 */
+    private int leafProgress(String rawStatus, int rawPct) {
+        if (rawStatus.equals("完成") || rawStatus.equals("已完成")) return 100;
+        if (rawStatus.equals("进行中")) return (rawPct > 0 && rawPct < 100) ? rawPct : 50;
+        return 0;
+    }
+
+    /** 一级里程碑：进度由叶子任务（三级 + 无子级的二级）均值重算，并回写状态与口径备注 */
+    private void applyLeafProgress(Map<String, Object> ms, int top, String sheetNote, SheetData sheet) {
+        // 一级行自身已明确"完成"（如项目启动这类无填报习惯的里程碑），尊重行状态，不向下重算
+        if ("已完成".equals(ms.get("status"))) return;
+        Set<String> l2WithChildren = new HashSet<>();
+        for (Leaf l : sheet.l3Leaves()) {
+            int dot = l.no().indexOf('.');
+            int dot2 = l.no().indexOf('.', dot + 1);
+            if (dot2 > 0) l2WithChildren.add(l.no().substring(0, dot2));
+        }
+        List<Integer> vals = new ArrayList<>();
+        int done = 0, doing = 0, blank = 0;
+        for (Leaf l : sheet.l3Leaves()) {
+            if (l.top() != top) continue;
+            vals.add(leafProgress(l.rawStatus(), l.rawPct()));
+            if (l.rawStatus().equals("完成") || l.rawStatus().equals("已完成")) done++;
+            else if (l.rawStatus().equals("进行中")) doing++;
+            else blank++;
+        }
+        for (Leaf l : sheet.l2Rows()) {
+            if (l.top() != top || l2WithChildren.contains(l.no())) continue;
+            vals.add(leafProgress(l.rawStatus(), l.rawPct()));
+            if (l.rawStatus().equals("完成") || l.rawStatus().equals("已完成")) done++;
+            else if (l.rawStatus().equals("进行中")) doing++;
+            else blank++;
+        }
+        if (vals.isEmpty()) return; // 无子任务（如里程碑 10~13），保留行状态
+
+        int computed = (int) Math.round(vals.stream().mapToInt(Integer::intValue).average().orElse(0));
+        ms.put("progress", computed);
+        String status = String.valueOf(ms.get("status"));
+        if (computed >= 100) {
+            ms.put("status", "已完成");
+        } else if (computed > 0 && status.equals("未开始")) {
+            ms.put("status", "进行中");
+        }
+        String detail = "进度" + computed + "%按子任务口径重算（叶子" + vals.size() + "：完成" + done
+                + "/进行中" + doing + "/未填" + blank + "；进行中100%按50%计）";
+        String baseNote = sheetNote == null ? "" : sheetNote;
+        ms.put("note", baseNote.isEmpty() ? detail : baseNote + "｜" + detail);
     }
 
     private String clean(String s) {

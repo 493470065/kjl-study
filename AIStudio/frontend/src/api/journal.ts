@@ -17,8 +17,8 @@ export const journalApi = {
   async save(scope: string, bucket: string, payload: any): Promise<void> {
     await http.put(`/journal/${scope}/${bucket}`, payload)
   },
-  /** 多语专项：从金山文档跟踪表同步 WBS 里程碑（后端调 kdocs-cli 拉取解析） */
+  /** 多语专项：从金山文档跟踪表同步 WBS 里程碑（后端调 kdocs-cli 分块拉取+重算，耗时约 30~60s，放宽超时） */
   async syncWbs(): Promise<any[]> {
-    return http.post('/i18n/wbs-sync').then(r => r.data.milestones)
+    return http.post('/i18n/wbs-sync', null, { timeout: 180000 }).then(r => r.data.milestones)
   }
 }

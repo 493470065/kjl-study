@@ -46,13 +46,18 @@ export interface TfsAttachment {
   url: string
 }
 
+// TFS 存储查询实测可达 50s+（后端 120s 结果缓存过期后需重新 spawn MCP 进程查 TFS），
+// 全局 30s 超时会掐断请求 → 前端报「加载失败，请检查查询链接配置或 TFS 服务」。
+// 后端 MCP 调用上限 120s，这里放宽到 150s 对齐；其他轻接口沿用全局 30s。
+const TFS_HEAVY_TIMEOUT = 150000
+
 export const tfsApi = {
   getStatus() {
     return http.get<TfsStatus>('/tfs/status').then(r => r.data)
   },
 
   listProjects() {
-    return http.get<TfsProject[]>('/tfs/projects').then(r => r.data)
+    return http.get<TfsProject[]>('/tfs/projects', { timeout: TFS_HEAVY_TIMEOUT }).then(r => r.data)
   },
 
   getWorkItem(id: number) {
@@ -61,19 +66,23 @@ export const tfsApi = {
 
   getWorkItems(ids: number[]) {
     return http.get<TfsWorkItem[]>('/tfs/work-items/batch', {
-      params: { ids: ids.join(',') }
+      params: { ids: ids.join(',') },
+      timeout: TFS_HEAVY_TIMEOUT
     }).then(r => r.data)
   },
 
-  getWorkItemsByQuery(queryId: string, project?: string) {
+  getWorkItemsByQuery(queryId: string, project?: string, refresh?: boolean) {
     const params: any = { queryId }
     if (project) params.project = project
-    return http.get<TfsWorkItem[]>('/tfs/query', { params }).then(r => r.data)
+    if (refresh) params.refresh = 'true'   // 后端 SWR 缓存：强刷绕过新鲜期同步取最新
+    return http.get<TfsWorkItem[]>('/tfs/query', { params, timeout: TFS_HEAVY_TIMEOUT }).then(r => r.data)
   },
 
   /** 关注需求：当前 PAT 账号在 TFS 关注的工作项（跨项目），走专用 following 端点 */
-  getFollowed() {
-    return http.get<TfsWorkItem[]>('/tfs/following').then(r => r.data)
+  getFollowed(refresh?: boolean) {
+    const params: any = {}
+    if (refresh) params.refresh = 'true'
+    return http.get<TfsWorkItem[]>('/tfs/following', { params, timeout: TFS_HEAVY_TIMEOUT }).then(r => r.data)
   },
 
   createWorkItem(data: {

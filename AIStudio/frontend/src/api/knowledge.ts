@@ -137,8 +137,9 @@ export const knowledgeApi = {
   },
 
   /** 多语专项资料自动入库：调 kdocs-cli 抽取正文（otl/xlsx），.pom 降级收录元数据；幂等 */
+  /** 多语专项资料入库：后端逐篇调 kdocs-cli 抽取正文，实测 3~4 分钟，放宽超时到 5 分钟（与后端读超时上限对齐） */
   syncMlSpecial() {
-    return http.post<{ results: { title: string; ok: boolean; chars?: number; error?: string }[] }>('/knowledge/ml-special/sync').then(r => r.data)
+    return http.post<{ results: { title: string; ok: boolean; chars?: number; error?: string }[] }>('/knowledge/ml-special/sync', null, { timeout: 300000 }).then(r => r.data)
   },
 
   /** Get knowledge base status */

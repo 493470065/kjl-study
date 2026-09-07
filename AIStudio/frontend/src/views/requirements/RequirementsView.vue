@@ -46,7 +46,7 @@
     <template v-if="hasDataSource">
       <!-- 工具栏 -->
       <div class="tab-toolbar">
-        <el-button @click="loadTab(activeTab)" :loading="activeLoading">
+        <el-button @click="loadTab(activeTab, { force: true })" :loading="activeLoading">
           <el-icon><Refresh /></el-icon> 刷新
         </el-button>
         <el-button @click="openConfigDialog">
@@ -658,7 +658,12 @@ function parseArgsText(text: string): Record<string, any> {
   return parsed
 }
 
-async function loadTab(key: string) {
+/**
+ * 加载单个 Tab 数据。
+ * opts.silent=true  后台预取用：失败不弹错误提示
+ * opts.force=true   「刷新」按钮用：绕过后端 SWR 缓存新鲜期，同步拿最新数据
+ */
+async function loadTab(key: string, opts?: { silent?: boolean; force?: boolean }) {
   const tab = TABS.find(t => t.key === key)
   if (!tab) return
 
@@ -682,7 +687,9 @@ async function loadTab(key: string) {
       tabLoaded[key] = true
     } catch (e: any) {
       const detail = e?.response?.data?.error
-      ElMessage.error(detail ? `加载「${tab.label}」失败：${detail}` : `加载「${tab.label}」失败，请检查 MCP 数据源配置`)
+      if (!opts?.silent) {
+        ElMessage.error(detail ? `加载「${tab.label}」失败：${detail}` : `加载「${tab.label}」失败，请检查 MCP 数据源配置`)
+      }
     } finally {
       tabLoading[key] = false
     }
@@ -694,11 +701,13 @@ async function loadTab(key: string) {
   if (key === 'followed') {
     tabLoading[key] = true
     try {
-      tabItems[key] = await tfsApi.getFollowed()
+      tabItems[key] = await tfsApi.getFollowed(opts?.force)
       tabLoaded[key] = true
     } catch (e: any) {
       const detail = e?.response?.data?.error
-      ElMessage.error(detail ? `加载「关注需求」失败：${detail}` : `加载「关注需求」失败，请检查 TFS 服务`)
+      if (!opts?.silent) {
+        ElMessage.error(detail ? `加载「关注需求」失败：${detail}` : `加载「关注需求」失败，请检查 TFS 服务`)
+      }
     } finally {
       tabLoading[key] = false
     }
@@ -716,13 +725,24 @@ async function loadTab(key: string) {
       try { projects.value = await tfsApi.listProjects() } catch { /* 项目列表可选 */ }
     }
     const project = key === 'inventory' && selectedProject.value ? selectedProject.value : undefined
-    tabItems[key] = await tfsApi.getWorkItemsByQuery(qid, project)
+    tabItems[key] = await tfsApi.getWorkItemsByQuery(qid, project, opts?.force)
     tabLoaded[key] = true
   } catch (e: any) {
     const detail = e?.response?.data?.error
-    ElMessage.error(detail ? `加载「${tab.label}」失败：${detail}` : `加载「${tab.label}」失败，请检查查询链接配置或 TFS 服务`)
+    if (!opts?.silent) {
+      ElMessage.error(detail ? `加载「${tab.label}」失败：${detail}` : `加载「${tab.label}」失败，请检查查询链接配置或 TFS 服务`)
+    }
   } finally {
     tabLoading[key] = false
+  }
+}
+
+/** 后台静默预取其余 Tab（串行执行，避免并发打爆 TFS/MCP 进程）；命中后切 Tab 零等待 */
+async function prefetchOtherTabs(skipKey: string) {
+  for (const t of TABS) {
+    if (t.key === skipKey || tabLoaded[t.key] || tabLoading[t.key]) continue
+    if (!(tfsAvailable.value || configuredSources[t.key] === 'mcp')) continue
+    try { await loadTab(t.key, { silent: true }) } catch { /* 预取失败不影响页面 */ }
   }
 }
 
@@ -1142,6 +1162,8 @@ onMounted(async () => {
   if (tfsAvailable.value || configuredSources[restoredTab] === 'mcp') {
     loadTab(restoredTab)
   }
+  // 首屏 Tab 加载中即开始后台串行预取其余 Tab（静默），之后切 Tab 零等待
+  prefetchOtherTabs(restoredTab)
 })
 </script>
 

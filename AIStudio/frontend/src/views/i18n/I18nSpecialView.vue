@@ -94,13 +94,13 @@
                     <i class="gantt__eval-dot" :class="`gantt__eval-dot--${msEvalRisk(m.id)}`" />
                     <span class="gantt__eval-text">{{ msEvalSummary(m.id) }}</span>
                   </div>
-                  <el-button class="gantt__eval-btn" size="small" link type="primary"
-                             :loading="msEvaluating === m.id" @click="runMsEval(m)">
+                  <el-button class="gantt__eval-btn" size="small" link type="primary" title="重新评估并打开详情"
+                             :loading="msEvaluating === m.id" @click="runMsEvalFromGantt(m)">
                     <el-icon v-if="msEvaluating !== m.id"><MagicStick /></el-icon>
                   </el-button>
                 </template>
                 <el-button v-else size="small" type="primary" plain
-                           :loading="msEvaluating === m.id" @click="runMsEval(m)">
+                           :loading="msEvaluating === m.id" @click="runMsEvalFromGantt(m)">
                   <el-icon v-if="msEvaluating !== m.id"><MagicStick /></el-icon> AI 评估
                 </el-button>
               </div>
@@ -125,6 +125,15 @@
         <!-- 里程碑 AI 评估详情抽屉：轻量评估（甘特图列） + 完整 6 维评估 -->
         <el-drawer v-model="showMsEval" :title="`AI 阶段评估 · ${msEvalMilestone?.name || ''}`" size="45%">
           <template v-if="msEvalMilestone">
+            <!-- 评估 Agent 可配置：默认 ml-milestone-evaluator，选择后持久化 -->
+            <div class="ml-eval-hist" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;">
+              <span class="ml-dim" style="font-size:12px;white-space:nowrap;">评估 Agent：</span>
+              <el-select v-model="settings.evalAgent" size="small" filterable allow-create default-first-option
+                         style="flex:1;min-width:240px;" placeholder="选择执行评估的 Agent" @change="persist">
+                <el-option v-for="a in agentOptions" :key="a.name"
+                           :label="a.name + (a.description ? ' · ' + a.description.slice(0, 24) : '')" :value="a.name" />
+              </el-select>
+            </div>
             <div class="ml-eval-hist" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
               <el-button size="small" type="primary" plain :loading="msEvaluating === msEvalMilestone.id" @click="runMsEval(msEvalMilestone)">
                 <el-icon v-if="msEvaluating !== msEvalMilestone.id"><MagicStick /></el-icon> 轻量评估（进度+风险）
@@ -374,7 +383,8 @@ import {
 } from '@element-plus/icons-vue'
 import PageContainer from '@/components/PageContainer.vue'
 import { journalApi } from '@/api/journal'
-import { chatApi } from '@/api/chat'
+import { agentRuntimeApi } from '@/api/agentRuntime'
+import { listAgentConfigs, type AgentConfig } from '@/api/agentConfig'
 import { useMarkdown } from '@/composables/useMarkdown'
 
 const { renderMarkdown } = useMarkdown()
@@ -817,6 +827,13 @@ function openMsEval(m: Milestone) {
   showMsEval.value = true
 }
 
+/** 甘特图「AI 评估」按钮：先打开详情抽屉（定位到该里程碑），再自动执行轻量评估 */
+function runMsEvalFromGantt(m: Milestone) {
+  if (msEvalFor.value !== m.id) msEvalFor.value = m.id
+  showMsEval.value = true
+  runMsEval(m)
+}
+
 /** 从评估结果解析风险等级：高→danger，中→warn，低→ok，无→none */
 function msEvalRisk(id: string): 'high' | 'med' | 'low' | 'none' {
   const r = latestMsEval(id)?.result || ''
@@ -837,35 +854,72 @@ function msEvalSummary(id: string): string {
   return text.length > 60 ? text.slice(0, 60) + '…' : text || '（无内容）'
 }
 
+/** 评估 Agent 配置：默认专用评估 Agent，可在抽屉中切换（持久化到 journal settings bucket） */
+const settings = reactive<{ evalAgent: string }>({ evalAgent: 'ml-milestone-evaluator' })
+const agentOptions = ref<AgentConfig[]>([])
+
+async function loadAgentOptions() {
+  try {
+    const list = await listAgentConfigs()
+    agentOptions.value = list.filter(a => a.enabled)
+  } catch { /* 列表加载失败时下拉为空，仍可手动输入 Agent 名 */ }
+}
+
+/**
+ * 组装评估数据报文（动态数据）。
+ * 评估方法论、项目背景、输出格式契约均在 Agent 绑定的技能 ml-milestone-evaluator 中维护，
+ * 此处只传数据，避免提示词硬编码在页面里。
+ */
+function buildEvalDataMessage(m: Milestone, type: 'light' | 'full'): string {
+  const parts: string[] = [
+    `【评估类型】${type === 'full' ? '完整 6 维阶段评估' : '轻量评估（进度+风险）'}`,
+    '',
+    '【目标里程碑】',
+    `- 名称：${m.name}`,
+    `- 阶段：${m.phase || '未分组'}｜责任人：${m.owner || '未指定'}`,
+    `- 状态：${milestoneStatus(m)}｜进度：${m.progress || 0}%｜计划：${m.planStart || '?'} ~ ${m.planEnd || '?'}｜今日：${todayStr()}`
+  ]
+  if (m.note) parts.push(`- 备注：${m.note}`)
+  if (type === 'full') {
+    const siblings = milestones.value.filter(x => x.phase === m.phase && x.id !== m.id).slice(0, 10)
+    parts.push('',
+      '【同阶段其他任务】',
+      siblings.length
+        ? siblings.map(x => `- ${x.name}｜状态：${milestoneStatus(x)}｜进度：${x.progress || 0}%｜责任人：${x.owner || '未指定'}｜计划：${x.planStart || '?'} ~ ${x.planEnd || '?'}`).join('\n')
+        : '（无同阶段其他任务）')
+  }
+  const recentWeeks = weeks.value.slice(0, type === 'full' ? 2 : 1)
+  parts.push('',
+    '【最近每周总结】',
+    recentWeeks.length
+      ? recentWeeks.map(w => `【${weekLabel(w)} ${w.dateFrom || ''}~${w.dateTo || ''}】${w.title}\n${w.content}`).join('\n---\n')
+      : '（暂无每周总结）')
+  if (type === 'full') {
+    const prevEvals = msEvalsOf(m.id).slice(0, 3)
+    parts.push('',
+      '【历史评估记录】',
+      prevEvals.length
+        ? prevEvals.map(e => `【${e.type === 'full' ? '完整' : '轻量'} ${e.at}】${e.result.replace(/[#*`]/g, '').slice(0, 200)}`).join('\n---\n')
+        : '（暂无历史评估，趋势维度请标注"暂无对比基线"）')
+  }
+  parts.push('', '请按你绑定的评估技能执行本次评估。')
+  return parts.join('\n')
+}
+
+/** 评估类 Agent 调用超时：完整 6 维评估 glm-5 实测可达 1~3 分钟，放宽到 5 分钟（与后端 LLM 调用上限对齐） */
+const EVAL_TIMEOUT_MS = 300_000
+
 /** 轻量评估（甘特图列展示）：只看进度 + 风险，输出 ≤3 行 */
 async function runMsEval(m: Milestone) {
   msEvaluating.value = m.id
   try {
-    const recentWeeks = weeks.value.slice(0, 1)
-    const weekText = recentWeeks.length
-      ? recentWeeks.map(w => `【${weekLabel(w)} ${w.dateFrom || ''}~${w.dateTo || ''}】${w.title}\n${w.content}`).join('\n---\n')
-      : '（暂无每周总结）'
-    const prompt = [
-      `你是项目管理助手，请对「多语专项」里程碑【${m.name}】做轻量评估（只看进度与风险，回答务必精炼）。`,
-      `所属阶段：${m.phase || '未分组'}｜责任人：${m.owner || '未指定'}`,
-      `状态：${milestoneStatus(m)}｜进度：${m.progress || 0}%｜计划：${m.planStart || '?'} ~ ${m.planEnd || '?'}｜今日：${todayStr()}${m.note ? `｜备注：${m.note}` : ''}`,
-      '',
-      '最近每周总结（节选）：',
-      weekText,
-      '',
-      '请用 Markdown 输出且总共不超过 3 行正文：',
-      '## 进度',
-      '一行：进度判断（百分比 + 是否偏离计划）；',
-      '## 风险',
-      '一行：风险等级【高/中/低】+ 一句话说明；无风险写"【低】暂无显著风险"。'
-    ].join('\n')
-    const resp = await chatApi.send(prompt, 'ml-special')
-    const content = (resp && (resp.content || resp.reply)) || '（AI 未返回内容）'
+    const resp = await agentRuntimeApi.chat(settings.evalAgent, buildEvalDataMessage(m, 'light'), undefined, EVAL_TIMEOUT_MS)
+    const content = (resp && (resp.content || (resp as any).reply)) || '（AI 未返回内容）'
     msEvals.value.unshift({ stage: m.id, type: 'light', at: formatNow(), result: content })
     if (msEvalFor.value !== m.id) msEvalFor.value = m.id
     await persist()
   } catch (e: any) {
-    ElMessage.error('AI 评估失败：' + (e?.message || '未知错误'))
+    ElMessage.error('AI 评估失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
   } finally {
     msEvaluating.value = ''
   }
@@ -884,60 +938,13 @@ const msFullScore = computed<number | null>(() => {
 async function runMsFullEval(m: Milestone) {
   msFullEvaluating.value = m.id
   try {
-    const siblings = milestones.value.filter(x => x.phase === m.phase && x.id !== m.id).slice(0, 10)
-    const sibText = siblings.length
-      ? siblings.map(x => `- ${x.name}｜状态：${milestoneStatus(x)}｜进度：${x.progress || 0}%｜责任人：${x.owner || '未指定'}｜计划：${x.planStart || '?'} ~ ${x.planEnd || '?'}`).join('\n')
-      : '（无同阶段其他任务）'
-    const recentWeeks = weeks.value.slice(0, 2)
-    const weekText = recentWeeks.length
-      ? recentWeeks.map(w => `【${weekLabel(w)} ${w.dateFrom || ''}~${w.dateTo || ''}】${w.title}\n${w.content}`).join('\n---\n')
-      : '（暂无每周总结）'
-    const prevEvals = msEvalsOf(m.id).slice(0, 3)
-    const prevText = prevEvals.length
-      ? prevEvals.map(e => `【${e.type === 'full' ? '完整' : '轻量'} ${e.at}】${e.result.replace(/[#*`]/g, '').slice(0, 200)}`).join('\n---\n')
-      : '（暂无历史评估，趋势维度请标注"暂无对比基线"）'
-    const prompt = [
-      `你是项目管理助手，请对「多语专项」里程碑节点【${m.name}】做完整 6 维阶段评估。`,
-      `所属阶段：${m.phase || '未分组'}｜责任人：${m.owner || '未指定'}`,
-      `状态：${milestoneStatus(m)}｜进度：${m.progress || 0}%｜计划：${m.planStart || '?'} ~ ${m.planEnd || '?'}｜今日：${todayStr()}${m.note ? `｜备注：${m.note}` : ''}`,
-      `项目背景：多语功能合并进公版 260330，合并窗口 09-14~09-18，10-15 随版发布，最大风险是国内公版被多语功能污染。`,
-      '',
-      '同阶段其他任务：',
-      sibText,
-      '',
-      '最近的每周总结（人工录入的邮件内容）：',
-      weekText,
-      '',
-      '历史评估记录（用于趋势对比）：',
-      prevText,
-      '',
-      '请用简洁 Markdown 输出，结构如下：',
-      '对以下 6 个维度逐一评估，每个维度先给评级（🟢正常/🟡关注/🔴告警）再用 2~3 句给依据：',
-      '## 1. 进度健康度',
-      '计划 vs 实际：完成率、按期情况、是否处于关键路径、偏差天数；',
-      '## 2. 质量与风险',
-      '交付质量信号：回归/返工情况，重点评估国内公版污染风险；',
-      '## 3. 依赖与阻塞',
-      '跨条线依赖是否就绪：分支、翻译资源、上游任务对下一节点的支撑度；',
-      '## 4. 资源与协作',
-      '责任人负载、单点依赖、条线间进度均衡度；',
-      '## 5. 时间窗口约束',
-      '合并窗口与发布日的剩余缓冲是否被侵蚀；',
-      '## 6. 趋势与动量',
-      '对比历史评估：加速/停滞/倒退，周报遗留事项是否闭环；',
-      '## 综合结论',
-      '三部分：',
-      '- 阶段健康分：0~100 的一个数字，格式严格为"健康分：XX"；',
-      '- Top 风险：最多 3 条，每条标注【高/中/低】+ 责任人 + 建议动作；',
-      '- 下一步安排：2~4 条可执行行动项。'
-    ].join('\n')
-    const resp = await chatApi.send(prompt, 'ml-special')
-    const content = (resp && (resp.content || resp.reply)) || '（AI 未返回内容）'
+    const resp = await agentRuntimeApi.chat(settings.evalAgent, buildEvalDataMessage(m, 'full'), undefined, EVAL_TIMEOUT_MS)
+    const content = (resp && (resp.content || (resp as any).reply)) || '（AI 未返回内容）'
     msEvals.value.unshift({ stage: m.id, type: 'full', at: formatNow(), result: content })
     if (msEvalFor.value !== m.id) msEvalFor.value = m.id
     await persist()
   } catch (e: any) {
-    ElMessage.error('完整评估失败：' + (e?.message || '未知错误'))
+    ElMessage.error('完整评估失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
   } finally {
     msFullEvaluating.value = ''
   }
@@ -958,7 +965,9 @@ async function syncFromSheet() {
     const custom = milestones.value.filter(m => !String(m.id).startsWith('wbs-'))
     milestones.value = [...list, ...custom]
     await persist()
-    ElMessage.success(`已同步 ${list.length} 条 WBS 里程碑（一级+二级）`)
+    const l1 = list.filter((m: any) => m.level === 1)
+    const summary = l1.map((m: any) => `${m.name}→${m.progress ?? 0}%`).join('，')
+    ElMessage.success({ message: `已同步 ${list.length} 条（一级+二级）：${summary}`, duration: 6000 })
   } catch (e: any) {
     const msg = e?.response?.data?.message || e?.message || '未知错误'
     ElMessage.error('同步失败：' + msg)
@@ -973,7 +982,8 @@ async function persist() {
       journalApi.save(SCOPE, 'milestones', milestones.value),
       journalApi.save(SCOPE, 'weeks', weeks.value),
       journalApi.save(SCOPE, 'docs', docs.value),
-      journalApi.save(SCOPE, 'ms-evals', msEvals.value)
+      journalApi.save(SCOPE, 'ms-evals', msEvals.value),
+      journalApi.save(SCOPE, 'settings', { ...settings })
     ])
   } catch (e: any) {
     ElMessage.error('保存失败：' + (e?.message || '未知错误'))
@@ -1006,11 +1016,16 @@ onMounted(async () => {
     docs.value = Array.isArray(data.docs) && data.docs.length ? data.docs : DOC_SEEDS.map(d => ({ id: `doc-${d.url.slice(-12)}`, ...d }))
     weeks.value = Array.isArray(data.weeks) ? data.weeks : []
     msEvals.value = Array.isArray(data['ms-evals']) ? data['ms-evals'] : []
+    if (data.settings && typeof data.settings === 'object' && data.settings.evalAgent) {
+      settings.evalAgent = String(data.settings.evalAgent)
+    }
   } catch {
     milestones.value = [...MILESTONE_SEEDS]
     msEvals.value = []
     docs.value = DOC_SEEDS.map(d => ({ id: `doc-${d.url.slice(-12)}`, ...d }))
   }
+  // 加载可用的 Agent 列表（评估 Agent 下拉）
+  loadAgentOptions()
 })
 
 // ==================== 工具 ====================
