@@ -1,0 +1,22 @@
+[
+  {"query": "小李，帮我做一下辅助录入模块的设计合理性分析，需求清单在参考资料目录下，你看看能不能出个报告", "should_trigger": true},
+  {"query": "评估一下住院病历模块的设计覆盖度，看看哪些问题点设计缺失了", "should_trigger": true},
+  {"query": "对门诊病历模块做个健康度分析，看看设计文档覆盖了哪些问题点", "should_trigger": true},
+  {"query": "设计合理性分析报告生成：辅助录入模块，需求清单在 E:\\37结构性问题治理\\04参考资料\\辅助录入\\01辅助录入模块需求清单_问题点分类统计.md", "should_trigger": true},
+  {"query": "五维评分评估一下我们的设计文档覆盖度，看看哪些是合理的哪些需要改", "should_trigger": true},
+  {"query": "做一下急诊病历模块的设计评估，对照设计文档看看覆盖度怎么样", "should_trigger": true},
+  {"query": "看看这个模块的设计合理性，我感觉很多设计文档没覆盖到需求点", "should_trigger": true},
+  {"query": "架构合理性分析，帮我看看现有架构设计是否能覆盖所有需求问题点", "should_trigger": true},
+  {"query": "需求覆盖度评估，把需求清单里的问题点映射到设计文档，看看覆盖度", "should_trigger": true},
+  {"query": "一票否决制检查，有没有哪个问题点设计完全缺失需要直接打回去的", "should_trigger": false},
+  {"query": "帮我看看这个bug怎么修，代码里报错了", "should_trigger": false},
+  {"query": "分析一下这个TFS需求号12345，看看需求是什么", "should_trigger": false},
+  {"query": "从TFS查询获取需求清单，按Spec知识库功能点结构聚拢输出", "should_trigger": false},
+  {"query": "把这段代码重构一下，添加注释和错误处理", "should_trigger": false},
+  {"query": "生成测试用例，基于这个需求描述设计测试用例", "should_trigger": false},
+  {"query": "设计文档审查看起来没问题，但代码实现可能有问题，帮我检查一下", "should_trigger": false},
+  {"query": "帮我把这个需求分析一下，生成需求分析文档", "should_trigger": false},
+  {"query": "这个模块的代码质量怎么样，帮我review一下代码", "should_trigger": false},
+  {"query": "性能优化建议，这个页面加载太慢了怎么优化", "should_trigger": false},
+  {"query": "生成功能点Spec文档，按照功能点划分方法论生成", "should_trigger": false}
+]

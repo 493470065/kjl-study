@@ -1,0 +1,42 @@
+{
+  "$schema": "./bug-fixer-config.schema.json",
+  "description": "Bug Fixer 配置文件模板",
+  "tfs": {
+    "serverUrl": "http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0",
+    "defaultCollection": "WINNING-6.0",
+    "pat": "your-pat-token-here"
+  },
+  "analysis": {
+    "batchSize": 100,
+    "maxConcurrentAnalysis": 3,
+    "defaultMaxBugs": null
+  },
+  "reports": {
+    "outputDir": "./reports",
+    "defaultFormat": "markdown",
+    "includeStackTrace": true,
+    "includeCodeHints": true
+  },
+  "categories": {
+    "代码质量": {
+      "priority": 1,
+      "color": "red"
+    },
+    "安全漏洞": {
+      "priority": 0,
+      "color": "red"
+    },
+    "并发安全": {
+      "priority": 0,
+      "color": "orange"
+    },
+    "性能问题": {
+      "priority": 2,
+      "color": "yellow"
+    },
+    "业务逻辑": {
+      "priority": 3,
+      "color": "blue"
+    }
+  }
+}

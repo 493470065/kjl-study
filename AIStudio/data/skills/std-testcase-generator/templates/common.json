@@ -1,0 +1,73 @@
+{
+  "categories": [
+    {
+      "name": "通用异常处理",
+      "description": "通用异常场景测试用例",
+      "testCases": [
+        {
+          "name": "{feature}_空值处理_列表显示",
+          "preCondition": "存在{featureType}为空的记录",
+          "steps": "1. 进入{featureType}功能页面\n2. 查看空值记录",
+          "expected": "正常显示空值，不报错",
+          "priority": "P1"
+        },
+        {
+          "name": "{feature}_空值处理_导出",
+          "preCondition": "存在{featureType}为空的记录",
+          "steps": "1. 进入{featureType}功能页面\n2. 执行导出操作",
+          "expected": "Excel导出正常，空值单元格显示为空",
+          "priority": "P1"
+        },
+        {
+          "name": "{feature}_特殊字符处理",
+          "preCondition": "{featureType}字段包含特殊字符",
+          "steps": "1. 进入{featureType}功能页面\n2. 查看特殊字符数据",
+          "expected": "特殊字符正常显示，不出现乱码",
+          "priority": "P2"
+        },
+        {
+          "name": "{feature}_超长文本处理",
+          "preCondition": "{featureType}字段内容超长",
+          "steps": "1. 进入{featureType}功能页面\n2. 查看超长文本数据",
+          "expected": "正常显示（截断或完整显示），不出现显示异常",
+          "priority": "P2"
+        },
+        {
+          "name": "{feature}_并发访问_同时操作",
+          "preCondition": "多个用户同时访问",
+          "steps": "1. 用户A执行{featureType}操作\n2. 用户B同时执行相同操作",
+          "expected": "两个操作都正常完成，数据正确",
+          "priority": "P1"
+        },
+        {
+          "name": "{feature}_大数据量_列表显示",
+          "preCondition": "数据量较大（>1000条）",
+          "steps": "1. 进入{featureType}功能页面\n2. 查看大量数据",
+          "expected": "列表正常显示，无性能问题",
+          "priority": "P1"
+        },
+        {
+          "name": "{feature}_分页查询_跨页数据",
+          "preCondition": "数据分页显示",
+          "steps": "1. 进入{featureType}功能页面\n2. 翻页查看不同页数据",
+          "expected": "每页数据都正确显示",
+          "priority": "P1"
+        },
+        {
+          "name": "{feature}_权限控制_无权限用户",
+          "preCondition": "用户无{featureType}功能权限",
+          "steps": "1. 使用无权限用户登录\n2. 尝试访问{featureType}功能",
+          "expected": "无法访问，提示权限不足",
+          "priority": "P1"
+        },
+        {
+          "name": "{feature}_权限控制_部分权限",
+          "preCondition": "用户有查看权限但无操作权限",
+          "steps": "1. 登录部分权限用户\n2. 进入{featureType}功能\n3. 尝试执行操作",
+          "expected": "操作按钮不可用或提示无权限",
+          "priority": "P1"
+        }
+      ]
+    }
+  ]
+}

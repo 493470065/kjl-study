@@ -1,0 +1,105 @@
+{
+  "categories": [
+    {
+      "name": "Bug复现测试",
+      "description": "Bug 问题复现和修复验证",
+      "testCases": [
+        {
+          "name": "Bug复现_原始问题场景",
+          "preCondition": "Bug环境或数据已准备",
+          "steps": "1. 按照Bug描述重现问题场景\n2. 执行导致Bug的操作",
+          "expected": "Bug已修复，问题不再出现",
+          "priority": "P0"
+        },
+        {
+          "name": "Bug复现_相同输入条件",
+          "preCondition": "Bug输入条件已明确",
+          "steps": "1. 使用Bug报告中的相同输入\n2. 执行相关操作",
+          "expected": "不再出现原Bug现象",
+          "priority": "P0"
+        },
+        {
+          "name": "Bug复现_边界数据",
+          "preCondition": "Bug涉及边界数据",
+          "steps": "1. 使用边界值数据测试",
+          "expected": "边界数据下功能正常",
+          "priority": "P1"
+        }
+      ]
+    },
+    {
+      "name": "修复验证测试",
+      "description": "Bug修复后的功能验证",
+      "testCases": [
+        {
+          "name": "修复验证_正向流程",
+          "preCondition": "Bug已修复",
+          "steps": "1. 执行正常业务功能",
+          "expected": "功能正常，无异常",
+          "priority": "P0"
+        },
+        {
+          "name": "修复验证_相关功能",
+          "preCondition": "Bug可能影响关联功能",
+          "steps": "1. 测试与Bug相关的功能点",
+          "expected": "相关功能正常运行",
+          "priority": "P1"
+        },
+        {
+          "name": "修复验证_无回归问题",
+          "preCondition": "修复已部署",
+          "steps": "1. 执行完整的业务测试\n2. 检查是否有新问题",
+          "expected": "修复成功，无回归问题",
+          "priority": "P1"
+        }
+      ]
+    },
+    {
+      "name": "异常输入测试",
+      "description": "异常和非法输入的测试",
+      "testCases": [
+        {
+          "name": "异常输入_特殊字符",
+          "preCondition": "输入字段可能包含特殊字符",
+          "steps": "1. 输入各种特殊字符\n2. 提交处理",
+          "expected": "系统正确处理，不出现XSS或乱码",
+          "priority": "P1"
+        },
+        {
+          "name": "异常输入_超长文本",
+          "preCondition": "文本输入字段",
+          "steps": "1. 输入超长文本（超过字段限制）",
+          "expected": "系统正确处理（截断或提示）",
+          "priority": "P1"
+        },
+        {
+          "name": "异常输入_SQL注入",
+          "preCondition": "存在数据库交互",
+          "steps": "1. 输入SQL注入语句",
+          "expected": "系统拦截，不执行恶意SQL",
+          "priority": "P0"
+        }
+      ]
+    },
+    {
+      "name": "性能与兼容性测试",
+      "description": "性能指标和兼容性验证",
+      "testCases": [
+        {
+          "name": "性能验证_响应时间",
+          "preCondition": "功能涉及数据处理",
+          "steps": "1. 执行相关操作\n2. 记录响应时间",
+          "expected": "响应时间在可接受范围内",
+          "priority": "P1"
+        },
+        {
+          "name": "兼容性_不同浏览器",
+          "preCondition": "Web界面",
+          "steps": "1. 在不同浏览器测试",
+          "expected": "功能在各浏览器正常",
+          "priority": "P2"
+        }
+      ]
+    }
+  ]
+}

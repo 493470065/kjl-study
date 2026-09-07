@@ -1,0 +1,85 @@
+{
+  "categories": [
+    {
+      "name": "用户故事验收测试",
+      "description": "用户故事验收标准测试",
+      "testCases": [
+        {
+          "name": "{title}_验收标准_角色功能",
+          "preCondition": "作为用户角色的权限配置正确",
+          "steps": "1. 以用户角色登录\n2. 访问{title}相关功能",
+          "expected": "用户可以执行期望的功能",
+          "priority": "P0"
+        },
+        {
+          "name": "{title}_验收标准_业务价值",
+          "preCondition": "业务场景已明确",
+          "steps": "1. 按照用户故事的业务场景执行\n2. 验证业务价值实现",
+          "expected": "业务价值得以实现",
+          "priority": "P0"
+        },
+        {
+          "name": "{title}_验收标准_完成定义",
+          "preCondition": "DoD已定义",
+          "steps": "1. 检查DoD各项是否满足",
+          "expected": "所有DoD项已完成",
+          "priority": "P1"
+        }
+      ]
+    },
+    {
+      "name": "用户交互测试",
+      "description": "用户界面和交互体验测试",
+      "testCases": [
+        {
+          "name": "{title}_界面布局_正确显示",
+          "preCondition": "页面可访问",
+          "steps": "1. 打开{title}相关页面",
+          "expected": "页面布局正确显示",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_交互反馈_按钮点击",
+          "preCondition": "页面包含可操作按钮",
+          "steps": "1. 点击页面按钮\n2. 观察反馈",
+          "expected": "按钮响应及时，反馈明确",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_交互反馈_表单验证",
+          "preCondition": "页面包含表单",
+          "steps": "1. 输入表单数据\n2. 提交表单",
+          "expected": "表单验证及时，错误提示清晰",
+          "priority": "P1"
+        }
+      ]
+    },
+    {
+      "name": "数据一致性测试",
+      "description": "数据正确性和一致性验证",
+      "testCases": [
+        {
+          "name": "{title}_数据创建_成功保存",
+          "preCondition": "有数据创建权限",
+          "steps": "1. 创建数据\n2. 保存",
+          "expected": "数据成功保存，可查询",
+          "priority": "P0"
+        },
+        {
+          "name": "{title}_数据更新_正确修改",
+          "preCondition": "有待更新数据",
+          "steps": "1. 修改数据\n2. 保存",
+          "expected": "数据正确修改，状态同步",
+          "priority": "P0"
+        },
+        {
+          "name": "{title}_数据删除_确认删除",
+          "preCondition": "有待删除数据",
+          "steps": "1. 选择数据\n2. 执行删除\n3. 确认",
+          "expected": "数据成功删除，无残留",
+          "priority": "P1"
+        }
+      ]
+    }
+  ]
+}

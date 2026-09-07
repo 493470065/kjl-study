@@ -1,0 +1,53 @@
+{
+  "dimensions": {
+    "business_logic": {
+      "weight": 0.35,
+      "sub_weights": {
+        "businessRules": 0.30,
+        "workflows": 0.25,
+        "constraints": 0.20,
+        "dataMapping": 0.15,
+        "edgeCases": 0.10
+      }
+    },
+    "functional_coverage": {
+      "weight": 0.20,
+      "sub_weights": {
+        "verbs": 0.40,
+        "entities": 0.35,
+        "fields": 0.25
+      }
+    },
+    "code_quality": {
+      "weight": 0.20
+    },
+    "test_coverage": {
+      "weight": 0.15,
+      "sub_weights": {
+        "has_test_file": 0.40,
+        "test_to_prod_ratio": 0.40,
+        "matching_test_class": 0.20
+      }
+    },
+    "code_scale": {
+      "weight": 0.10,
+      "expectations": {
+        "SMALL": {
+          "min_commits": 1,
+          "expected_files": 3,
+          "expected_lines": 100
+        },
+        "MEDIUM": {
+          "min_commits": 3,
+          "expected_files": 10,
+          "expected_lines": 500
+        },
+        "LARGE": {
+          "min_commits": 5,
+          "expected_files": 20,
+          "expected_lines": 1500
+        }
+      }
+    }
+  }
+}

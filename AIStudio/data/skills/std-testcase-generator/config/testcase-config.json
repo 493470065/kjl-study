@@ -1,0 +1,40 @@
+{
+  "output": {
+    "basePath": "testcase",
+    "fileNamePattern": "{workItemId}-testcase_{timestamp}.xlsx"
+  },
+  "excel": {
+    "sheetName": "测试用例",
+    "columns": [
+      { "key": "id", "header": "序号", "width": 8 },
+      { "key": "name", "header": "用例名称", "width": 45 },
+      { "key": "preCondition", "header": "前置条件", "width": 35 },
+      { "key": "steps", "header": "执行步骤", "width": 45 },
+      { "key": "expected", "header": "预期结果", "width": 45 },
+      { "key": "priority", "header": "优先级", "width": 10 }
+    ],
+    "headerStyle": {
+      "fill": {
+        "type": "pattern",
+        "pattern": "solid",
+        "fgColor": { "argb": "FF4472C4" }
+      },
+      "font": {
+        "bold": true,
+        "color": { "argb": "FFFFFFFF" }
+      }
+    },
+    "priorityColors": {
+      "P0": "FFFF0000",
+      "P1": "FFFF9900",
+      "P2": "FFFFFF00"
+    }
+  },
+  "template": {
+    "defaultCategory": "feature"
+  },
+  "tfs": {
+    "defaultProject": "WiNEX-BasicInfoService",
+    "fields": ["System.Title", "System.Description", "System.AssignedTo", "Microsoft.VSTS.Common.Priority"]
+  }
+}

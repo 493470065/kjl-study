@@ -1,0 +1,43 @@
+{
+  "repos_root_dir": "/winning/winex-repo/storage/repos",
+  "repos_root_dir_local": "/Users/leishi/work/winning/winex-repo",
+  "tfs": {
+    "collection": "WINNING-6.0",
+    "server_url": "http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0"
+  },
+  "requirement_analysis": {
+    "priority_order": ["stored", "tfs", "llm"],
+    "stored_analysis_path": "../tfs2018-integration/assets/references/user/content.md",
+    "llm": {
+      "provider": "claude",
+      "model": "glm-5",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "timeout": 300000
+    }
+  },
+  "code_analysis": {
+    "max_file_size": 1048576,
+    "max_dependency_depth": 2,
+    "include_patterns": ["*.ts", "*.tsx", "*.js", "*.jsx", "*.vue", "*.java"],
+    "exclude_patterns": ["*.test.*", "*.spec.*", "node_modules/*", "dist/*", "build/*"]
+  },
+  "scoring": {
+    "weights": {
+      "business_logic": 0.35,
+      "functional_coverage": 0.20,
+      "code_quality": 0.20,
+      "test_coverage": 0.15,
+      "code_scale": 0.10
+    }
+  },
+  "output": {
+    "report_dir": "reports",
+    "console_width": 60,
+    "http_server_url": "http://172.17.1.173"
+  },
+  "code_scanner": {
+    "enabled": true,
+    "severity_filter": ["严重"],
+    "fallback_to_simple_scan": true
+  }
+}

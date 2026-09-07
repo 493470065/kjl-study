@@ -1,0 +1,9 @@
+{
+  "_comment": "数据库凭据已脱敏。原明文 password 改为从环境变量 MA_PARAM_DB_PASSWORD 读取（脚本 --db 模式优先用环境变量）。请勿将内网密码写回此文件。",
+  "server": "172.16.7.181",
+  "database": "WIN60_MAMDM",
+  "schema": "dbo",
+  "table": "MA_PARAMETER",
+  "user": "readonly_user",
+  "passwordEnv": "MA_PARAM_DB_PASSWORD"
+}

@@ -1,0 +1,119 @@
+{
+  "categories": [
+    {
+      "name": "核心功能测试",
+      "description": "功能需求核心业务流程测试",
+      "testCases": [
+        {
+          "name": "{title}_正常流程_基本功能",
+          "preCondition": "用户已登录，权限正常",
+          "steps": "1. 进入{title}功能页面\n2. 执行基本操作",
+          "expected": "功能正常执行，结果符合预期",
+          "priority": "P0"
+        },
+        {
+          "name": "{title}_正常流程_完整流程",
+          "preCondition": "具备完整业务流程所需的数据",
+          "steps": "1. 进入{title}功能页面\n2. 按照完整业务流程执行",
+          "expected": "完整流程顺畅完成，无阻断问题",
+          "priority": "P0"
+        },
+        {
+          "name": "{title}_边界条件_最小输入",
+          "preCondition": "准备最小有效输入数据",
+          "steps": "1. 进入{title}功能页面\n2. 输入最小有效数据",
+          "expected": "系统接受并正确处理",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_边界条件_最大输入",
+          "preCondition": "准备最大有效输入数据",
+          "steps": "1. 进入{title}功能页面\n2. 输入最大有效数据",
+          "expected": "系统接受并正确处理",
+          "priority": "P1"
+        }
+      ]
+    },
+    {
+      "name": "配置与参数测试",
+      "description": "系统配置和参数设置测试",
+      "testCases": [
+        {
+          "name": "{title}_字段配置_默认值",
+          "preCondition": "系统配置初始化",
+          "steps": "1. 检查{title}功能配置\n2. 查看字段默认值",
+          "expected": "字段默认值配置正确",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_参数校验_有效参数",
+          "preCondition": "准备有效参数值",
+          "steps": "1. 进入{title}参数配置\n2. 设置有效参数",
+          "expected": "参数保存成功",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_参数校验_无效参数",
+          "preCondition": "准备无效参数值",
+          "steps": "1. 进入{title}参数配置\n2. 设置无效参数",
+          "expected": "系统提示参数错误，保存失败",
+          "priority": "P1"
+        }
+      ]
+    },
+    {
+      "name": "异常场景测试",
+      "description": "异常情况和错误处理测试",
+      "testCases": [
+        {
+          "name": "{title}_异常处理_数据异常",
+          "preCondition": "存在异常数据",
+          "steps": "1. 进入{title}功能页面\n2. 查看异常数据",
+          "expected": "正常显示原始数据，不影响其他功能",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_异常处理_网络中断",
+          "preCondition": "网络连接正常",
+          "steps": "1. 开始{title}操作\n2. 模拟网络中断",
+          "expected": "系统提示网络异常，数据无丢失",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_异常处理_超时处理",
+          "preCondition": "操作可能需要较长时间",
+          "steps": "1. 执行{title}耗时操作\n2. 等待超时",
+          "expected": "系统正确处理超时，显示友好提示",
+          "priority": "P1"
+        }
+      ]
+    },
+    {
+      "name": "数据导出测试",
+      "description": "数据导出功能测试",
+      "testCases": [
+        {
+          "name": "{title}_导出_全部数据",
+          "preCondition": "有待导出数据",
+          "steps": "1. 进入{title}功能页面\n2. 选择导出全部",
+          "expected": "Excel文件正确生成，包含所有数据",
+          "priority": "P0"
+        },
+        {
+          "name": "{title}_导出_条件筛选",
+          "preCondition": "存在多条数据",
+          "steps": "1. 进入{title}功能页面\n2. 设置筛选条件\n3. 导出符合条件的数据",
+          "expected": "Excel只包含符合条件的数据",
+          "priority": "P1"
+        },
+        {
+          "name": "{title}_导出_字段完整性",
+          "preCondition": "数据包含多个字段",
+          "steps": "1. 进入{title}功能页面\n2. 导出数据",
+          "expected": "Excel包含所有必要字段，数据完整",
+          "priority": "P1"
+        }
+      ]
+    }
+  ]
+}

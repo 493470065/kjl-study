@@ -1,0 +1,8 @@
+{
+  "server": "172.16.7.181",
+  "database": "WIN60_MAMDM",
+  "schema": "dbo",
+  "table": "MA_PARAMETER",
+  "user": "readonly_user",
+  "password": "readonly_medical9527"
+}

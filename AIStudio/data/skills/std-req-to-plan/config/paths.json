@@ -1,0 +1,20 @@
+{
+  "_comment": "前后端代码路径配置 - 相对路径基于当前工作目录",
+  "_note": "支持多项目配置，包括急诊、门诊和会诊",
+  "emg": {
+    "frontendPath": "D:/workspace/claudecode/codes/winning-webui-emergency-medical-record",
+    "backendPath": "D:/workspace/claudecode/codes/winning-emr-opt/winning-emr-emg-emrset",
+    "projectName": "急诊病历"
+  },
+  "opt": {
+    "frontendPath": "D:/workspace/claudecode/codes/winning-webui-outpatient-medical-record",
+    "backendPath": "D:/workspace/claudecode/codes/winning-emr-opt/winning-emr-opt-emrset",
+    "projectName": "门诊病历"
+  },
+  "consultation": {
+    "frontendPath": "emr/winning-webui-emr-consultation",
+    "backendPath": "emr/winning-emr-consultation",
+    "projectName": "会诊管理系统"
+  },
+  "excludePatterns": ["node_modules", "dist", "target", ".git", "build", "__pycache__"]
+}

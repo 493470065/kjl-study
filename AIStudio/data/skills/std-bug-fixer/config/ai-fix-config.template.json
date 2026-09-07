@@ -1,0 +1,93 @@
+{
+  "_comment": "AI 自动修复配置模板",
+  "_instructions": "复制此文件为 ai-fix-config.json 并根据需要修改配置",
+
+  "ai": {
+    "_comment": "AI 模型配置",
+    "provider": "claude",
+    "model": "claude-opus-4-6",
+    "maxTokens": 4000,
+    "temperature": 0.2,
+    "timeout": 60000
+  },
+
+  "fixApplication": {
+    "_comment": "修复应用配置",
+    "createBackup": true,
+    "backupDir": "./fix-backups",
+    "maxRetries": 3,
+    "confirmBeforeApply": false,
+    "continueOnError": false
+  },
+
+  "verification": {
+    "_comment": "验证配置",
+    "enabled": true,
+    "runTests": false,
+    "testCommand": "npm test",
+    "staticAnalysis": true,
+    "syntaxCheck": true,
+    "safetyCheck": true
+  },
+
+  "git": {
+    "_comment": "Git 集成配置",
+    "autoCommit": true,
+    "commitTemplate": "fix: [Bug {bugId}] {title}\n\nAuto-generated fix for bug {bugId}",
+    "createBranch": true,
+    "branchTemplate": "fix/bug-{bugId}",
+    "createPR": false,
+    "pushToRemote": false
+  },
+
+  "safety": {
+    "_comment": "安全限制配置",
+    "maxFileSize": 100000,
+    "allowedFileExtensions": [
+      ".java",
+      ".js",
+      ".ts",
+      ".vue",
+      ".py",
+      ".go",
+      ".sql"
+    ],
+    "forbiddenPatterns": [
+      "password",
+      "secret",
+      "api_key",
+      "token",
+      "private_key"
+    ],
+    "requireHumanReview": [
+      "critical",
+      "high"
+    ]
+  },
+
+  "batch": {
+    "_comment": "批量处理配置",
+    "maxConcurrent": 3,
+    "delayBetweenFixes": 1000,
+    "continueOnError": false
+  },
+
+  "codeGeneration": {
+    "_comment": "代码生成配置",
+    "useTemplates": true,
+    "useAI": false,
+    "preferTemplateFor": [
+      "nullPointer",
+      "sqlInjection",
+      "indexOutOfBounds"
+    ]
+  },
+
+  "reporting": {
+    "_comment": "报告配置",
+    "generateFixReport": true,
+    "includeCodeDiff": true,
+    "includeVerificationResults": true,
+    "saveFailedFixes": true
+  }
+}

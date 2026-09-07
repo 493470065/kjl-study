@@ -1,0 +1,5 @@
+{
+  "_comment": "本配置已迁移到公共技能 std-code-paths，此文件仅做兼容保留",
+  "_sharedConfigPath": "~/.claude/skills/std-code-paths/config/paths.json",
+  "_usage": "使用 Skill 工具调用 std-code-paths 获取路径配置，然后读取上述路径的文件"
+}

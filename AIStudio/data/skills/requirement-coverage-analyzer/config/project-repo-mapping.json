@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "lastUpdate": "2026-02-13T07:48:11.699Z",
+  "mappings": {
+    "WiNEX-Inpatient-2": {
+      "codeProjects": [
+        "W.in-MVP"
+      ],
+      "confidence": "high",
+      "source": "user_confirmed",
+      "learnedAt": "2026-02-13T06:22:22.282Z",
+      "confirmedBy": "user",
+      "confirmedAt": "2026-02-13T06:22:22.282Z",
+      "usageCount": 9,
+      "lastScore": 75
+    }
+  },
+  "namingPatterns": {},
+  "historyStats": {
+    "WiNEX-Inpatient-2→W.in-MVP": 1
+  }
+}

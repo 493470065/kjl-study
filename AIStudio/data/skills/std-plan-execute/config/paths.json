@@ -1,0 +1,9 @@
+{
+  "_comment": "计划执行技能配置文件",
+  "_note": "首次使用时技能会引导你填写，配置文件随技能目录存储可跨电脑迁移",
+  "planBasePath": "D:/workspace/claudecode/过程文件",
+  "frontendPath": "D:/workspace/claudecode/codes/winning-webui-emergency-medical-record",
+  "backendPath": "D:/workspace/claudecode/codes/winning-emr-opt/winning-emr-emg-emrset",
+  "fromBranch": "sr-next",
+  "branchFormatter": "fix/{taskId}"
+}

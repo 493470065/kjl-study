@@ -1,0 +1,5 @@
+# PR 需求合规性检查工具 - Python 依赖
+# Python 3.6+ required
+
+# YAML 解析（用于解析 LLM 返回的分析结果）
+pyyaml>=6.0
