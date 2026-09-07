@@ -65,6 +65,32 @@ const LINE_PREFIX = (() => {
   if (['emergency', '急诊', 'jzbl'].includes(raw)) return 'JZBL';
   return '';
 })();
+// 历史生命周期模式：--since=2024-01-01 或 {"since":"2024-01-01"}
+// 指定后不直接执行存储查询，而是读取存储查询的 WIQL 定义，注入 CreatedDate 下限后重新执行，
+// 其余管道（基线过滤/语义匹配/聚拢/FPI）全部复用。健康度启用 v2 公式（复发惩罚 + 长尾惩罚）。
+const HISTORY_SINCE = (() => {
+  const cli = (args.find(a => String(a).startsWith('--since=')) || '').split('=')[1] || '';
+  const raw = String(_argJson.since || cli || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+})();
+// 指定工单 ID 集合模式：--ids=1,2,3 或 {"ids":[1,2,3]}
+// 来源：需求归集页面把「数据源链接」拉取到的工单 ID 合集传入，技能对这批工单做功能点映射与统计，
+// 即 FPI 数据严格来自链接拉取结果（跳过 WIQL 查询，直接批量拉详情）。优先级高于 since。
+const IDS_MODE = (() => {
+  const cli = (args.find(a => String(a).startsWith('--ids=')) || '').split('=')[1] || '';
+  const raw = Array.isArray(_argJson.ids) ? _argJson.ids : (cli ? cli.split(',') : []);
+  const ids = raw.map(x => parseInt(x, 10)).filter(x => Number.isFinite(x) && x > 0);
+  return [...new Set(ids)];
+})();
+// 深度模式（ids 或 since）：数据量覆盖完整窗口，启用 v2 健康度公式（复发/长尾惩罚）
+const DEEP_MODE = Boolean(HISTORY_SINCE || IDS_MODE.length);
+// 策略3：文书 Spec 知识库匹配（工单标题分词 → AIStudio 知识库 FTS → 功能点投票）
+// 默认启用；{"specKb": false} 关闭；kbApi 可指定平台地址（默认本机 8091）
+const SPEC_KB_ENABLED = !(String(_argJson.specKb === undefined ? '' : _argJson.specKb).toLowerCase() === 'false');
+const KB_API_BASE = String(_argJson.kbApi || process.env.KB_API || 'http://localhost:8091').replace(/\/+$/, '');
+const KB_LINE = { BLGL: 'inpatient-emr', MZBL: 'outpatient-emr', JZBL: 'emergency-emr' };
+const KB_TOPK = 6;
+const KB_MAX_QUERIES = 400;
 const positional = args.filter(a => !String(a).startsWith('--'));
 const tfsQueryUrl = positional[0] || _argJson.queryUrl || _argJson.url || DEFAULT_QUERY_URL;
 const patToken = positional[1] || _argJson.pat || DEFAULT_PAT_TOKEN;
@@ -163,6 +189,36 @@ function request(method, url, body) {
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
+}
+
+// ============================================================
+// 历史生命周期查询：按数据口径自建 WIQL，拉取 CreatedDate >= since 的全量需求/软质
+// 口径（与存储查询一致，见 SKILL.md 数据口径说明）：
+//   - 产品名 ∈ {WiNEX 病历管理, 03 WiNEX 急诊病历, WiNEX 门诊病历管理}（横跨 3 个项目）
+//   - AreaPath 排除 WiNEX-Inpatient-2\病历质控 与 WiNEX-Outpatient\病历质控
+//   - 工作项类型 ∈ {需求, 软质}
+//   - R27 过滤（ResolvedDate = '' OR ResolvedDate ≠ ClosedDate）；TFS 2018 部分类型无该字段时自动降级去掉
+// ============================================================
+async function fetchHistoryWorkItems(tfs, since) {
+  const PRODUCTS = "('WiNEX 病历管理','03 WiNEX 急诊病历','WiNEX 门诊病历管理')";
+  const clauseWhere =
+    'WHERE [Winning.Product.Name] IN ' + PRODUCTS +
+    ' AND [System.CreatedDate] >= \'' + since + '\'' +
+    ' AND [System.WorkItemType] IN (\'需求\',\'软质\')' +
+    ' AND [System.AreaPath] NOT UNDER \'WiNEX-Inpatient-2\\病历质控\'' +
+    ' AND [System.AreaPath] NOT UNDER \'WiNEX-Outpatient\\病历质控\'';
+  const R27 = ' AND ([Microsoft.VSTS.Common.ResolvedDate] = \'\' OR [Microsoft.VSTS.Common.ResolvedDate] <> [Microsoft.VSTS.Common.ClosedDate])';
+  const wiqlPostUrl = `${tfs.base}/tfs/${tfs.collection}/${tfs.project}/_apis/wit/wiql?api-version=2.0`;
+  logProgress('  历史模式: CreatedDate >= ' + since + '（产品过滤 + 类型 需求/软质 + 质控区域排除）');
+  let result;
+  try {
+    result = await request('POST', wiqlPostUrl, { query: 'SELECT [System.Id] FROM WorkItems ' + clauseWhere + R27 });
+  } catch (e) {
+    // R27 字段在部分工作项类型上可能不存在 → 降级去掉 R27 重试
+    logProgress('  [降级] 含 R27 过滤的查询失败（' + String(e.message).substring(0, 120) + '），去掉 R27 重试');
+    result = await request('POST', wiqlPostUrl, { query: 'SELECT [System.Id] FROM WorkItems ' + clauseWhere });
+  }
+  return result.workItems || [];
 }
 
 // ============================================================
@@ -410,6 +466,86 @@ function matchFunctionPoint(itemId, fpMap, title, description, tfsModule) {
 }
 
 // ============================================================
+// 策略3：文书 Spec 知识库匹配（AIStudio knowledge_documents FTS + 功能点投票）
+// 原理：工单标题分词（领域词表过滤噪音）→ 知识库 FTS 检索（ngram 布尔模式）→
+//       同一功能点的多篇 Spec 文档（Spec/Analyst/PM-spec）命中 ≥2 票 → 归集到该功能点
+// ============================================================
+const kbMatch = {
+  available: true,       // API 探测失败后置 false，本次运行不再尝试
+  vocab: null,           // 领域词表（Spec 功能点名称 2-gram + 常用业务词）
+  cache: new Map(),      // title → 匹配结果（去重，避免同标题重复查询）
+  queries: 0,
+  hits: 0,
+  skipped: 0
+};
+
+function buildKbVocab(fpMap) {
+  const vocab = new Set(['校验','审核','审批','触发','联动','预警','引用','同步','录入','查询','打印','导出','签名','签收','归档','借阅','解锁','封存','模板','短语','目录','会诊','病案','首页','诊断','交接','时限','质控','痕迹','撤销','提交','作废','补打','重打','召回','重签','催办','提醒','任务','抽查','评分','锁定','编辑','保存','新建','创建','打开','浏览','检索','转归档','续打','重整','条码','随访','视图','病历','病程','护理','医嘱','检查','检验','报告','单据','列表','统计','配置','权限','角色','科室','患者','床号','转科','入院','出院','字迹','光标','焦点','弹窗','加载','卡顿','闪退','报错','异常','失效','丢失','重复','错位','乱码']);
+  for (const info of Object.values(fpMap)) {
+    const name = String((info && info.name) || '');
+    for (let i = 0; i + 2 <= name.length; i++) vocab.add(name.substring(i, i + 2));
+  }
+  return vocab;
+}
+
+/** 标题分词：领域词表内的 2-gram 优先（滤除噪音），无命中时回退全量 2-gram；英文/数字串整体保留 */
+function segmentForKb(title, vocab) {
+  const runs = String(title || '').replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, ' ').split(/\s+/).filter(Boolean);
+  const tokens = [];
+  for (const run of runs) {
+    if (/^[A-Za-z0-9]{2,}$/.test(run)) { tokens.push(run); continue; }
+    const grams = [];
+    for (let i = 0; i + 2 <= run.length; i++) grams.push(run.substring(i, i + 2));
+    const inVocab = grams.filter(g => vocab.has(g));
+    tokens.push(...(inVocab.length ? inVocab : grams));
+  }
+  return [...new Set(tokens)].slice(0, 12);
+}
+
+async function kbMatchFunctionPoint(title, fpMap, linePrefix) {
+  if (!SPEC_KB_ENABLED || !kbMatch.available) return null;
+  const key = String(title || '');
+  if (!key || key.length < 4) return null;
+  if (kbMatch.cache.has(key)) return kbMatch.cache.get(key);
+  if (kbMatch.queries >= KB_MAX_QUERIES) { kbMatch.skipped++; return null; }
+
+  const tokens = segmentForKb(key, kbMatch.vocab);
+  if (tokens.length < 2) { kbMatch.cache.set(key, null); return null; }
+
+  kbMatch.queries++;
+  const params = new URLSearchParams({ q: tokens.join(' '), topK: String(KB_TOPK) });
+  const pl = KB_LINE[linePrefix];
+  if (pl) params.set('productLine', pl);
+  let hits = [];
+  try {
+    const res = await request('GET', `${KB_API_BASE}/api/knowledge/search?${params.toString()}`);
+    hits = (res && res.results) || [];
+  } catch (e) {
+    kbMatch.available = false;
+    logProgress('  ⚠ Spec 知识库检索不可用（' + String(e.message || e).substring(0, 60) + '），本次运行跳过知识库匹配');
+    return null;
+  }
+
+  // 按功能点投票：同一功能点的多篇 Spec 文档命中 → 票数累加
+  const votes = {};
+  for (const h of hits) {
+    const fp = String((h && h.functionPoint) || '');
+    const code = fp.split('_')[0];
+    if (!code || !fpMap[code]) continue;   // 只采纳 Spec 树内功能点
+    votes[code] = (votes[code] || 0) + 1;
+  }
+  const entries = Object.entries(votes).sort((a, b) =>
+    (b[1] - a[1]) || ((String(title).includes(fpMap[b[0]].name) ? 1 : 0) - (String(title).includes(fpMap[a[0]].name) ? 1 : 0))
+  );
+  const out = (entries.length && entries[0][1] >= 2)
+    ? { fpCode: entries[0][0], module: fpMap[entries[0][0]].module, score: entries[0][1], source: 'spec-kb' }
+    : null;
+  if (out) kbMatch.hits++;
+  kbMatch.cache.set(key, out);
+  return out;
+}
+
+// ============================================================
 // 模块级匹配（兜底）：当功能点匹配不到时，按模块名或关键词归类
 // ============================================================
 function classifyItem(title, description, tfsModuleName) {
@@ -492,6 +628,12 @@ async function main() {
     logProgress('🎚️ 条线过滤: ' + LINE_PREFIX + '（功能点池 ' + beforeCount + ' → ' + Object.keys(fpMap).length + '）');
   }
 
+  // 策略3初始化：文书 Spec 知识库匹配词表（基于条线过滤后的功能点池）
+  if (SPEC_KB_ENABLED) {
+    kbMatch.vocab = buildKbVocab(fpMap);
+    logProgress('📚 Spec 知识库匹配已启用（词表 ' + kbMatch.vocab.size + ' 项，平台 ' + KB_API_BASE + '）');
+  }
+
   // 步骤1: 解析 TFS URL
   logProgress('📡 正在连接 TFS...');
   const tfs = parseTfsUrl(tfsQueryUrl);
@@ -500,18 +642,28 @@ async function main() {
   logProgress('  查询ID: ' + tfs.queryId);
   logProgress('');
 
-  // 步骤2: 执行 WIQL 查询获取工作项列表
-  logProgress('🔍 正在执行查询...');
-  const wiqlUrl = `${tfs.base}/tfs/${tfs.collection}/${tfs.project}/_apis/wit/wiql/${tfs.queryId}?api-version=2.0`;
-  const queryResult = await request('GET', wiqlUrl);
-  const workItems = queryResult.workItems || [];
+  // 步骤2: 确定工作项 ID 集合
+  logProgress('🔍 正在确定工作项范围...');
+  let workItems;
+  if (IDS_MODE.length) {
+    // 链接数据模式：外部传入工单 ID 集合（来自数据源链接拉取结果），跳过 WIQL
+    workItems = IDS_MODE.map(id => ({ id }));
+    logProgress('  外部传入 ID 集合: ' + IDS_MODE.length + ' 项（link-ids 模式）');
+  } else if (HISTORY_SINCE) {
+    // 历史生命周期模式：读取存储查询 WIQL → 注入 CreatedDate 下限 → 重新执行
+    workItems = await fetchHistoryWorkItems(tfs, HISTORY_SINCE);
+  } else {
+    const wiqlUrl = `${tfs.base}/tfs/${tfs.collection}/${tfs.project}/_apis/wit/wiql/${tfs.queryId}?api-version=2.0`;
+    const queryResult = await request('GET', wiqlUrl);
+    workItems = queryResult.workItems || [];
+  }
   logProgress('  查询结果: ' + workItems.length + ' 项');
   logProgress('');
 
   // 步骤3: 批量获取工作项详情
   logProgress('📦 正在获取需求详情...');
   const ids = workItems.map(w => w.id);
-  const fields = ['System.Id','System.Title','System.Description','Winning.Module.name','System.State','System.WorkItemType','Microsoft.VSTS.CMMI.RequirementType','System.CreatedDate'].join(',');
+  const fields = ['System.Id','System.Title','System.Description','Winning.Module.name','System.State','System.WorkItemType','Microsoft.VSTS.CMMI.RequirementType','System.CreatedDate','System.CreatedBy'].join(',');
 
   // TFS 2018 批量获取限制: 一次最多 200 个 ID
   const batchSize = 200;
@@ -521,6 +673,9 @@ async function main() {
     const itemsUrl = `${tfs.base}/tfs/${tfs.collection}/${tfs.project}/_apis/wit/workitems?ids=${batch.join(',')}&fields=${fields}&api-version=2.0`;
     const result = await request('GET', itemsUrl);
     allItems = allItems.concat(result.value || []);
+    if (ids.length > 400 && (i / batchSize) % 20 === 0) {
+      logProgress('  已获取 ' + allItems.length + ' / ' + ids.length + ' 项...');
+    }
   }
   logProgress('  获取完成: ' + allItems.length + ' 项');
   logProgress('');
@@ -564,6 +719,18 @@ async function main() {
       continue;
     }
 
+    // 步骤2b: 关键词未命中 → 文书 Spec 知识库匹配（分词 FTS 检索 + 功能点投票）
+    const kbResult = await kbMatchFunctionPoint(title, fpMap, LINE_PREFIX);
+    if (kbResult) {
+      const code = kbResult.module;
+      if (!groups[code]) {
+        const mod = specModules[code] || { sys: '未匹配', domain: '', name: code, fp: 0 };
+        groups[code] = { code, sys: mod.sys, domain: mod.domain, name: mod.name, fp: mod.fp, items: [] };
+      }
+      groups[code].items.push({ id, title, description, state, createdDate, confidence: 'spec-kb', kbScore: kbResult.score, fpCode: kbResult.fpCode, workItemType, requirementType, isMerge });
+      continue;
+    }
+
     // 步骤3: 无匹配 → 按模块级归类
     const result = classifyItem(title, description, tfsModule);
     const code = result.code;
@@ -589,6 +756,10 @@ async function main() {
       suggestedCode: result.suggestedCode || '需新建模块',
       confidence: result.confidence, isMerge
     });
+  }
+
+  if (SPEC_KB_ENABLED) {
+    logProgress('📚 Spec 知识库匹配: 查询 ' + kbMatch.queries + ' 次，命中归集 ' + kbMatch.hits + ' 条' + (kbMatch.skipped ? '，超限跳过 ' + kbMatch.skipped + ' 条' : ''));
   }
 
   // 计算每个模块的实际匹配功能点数
@@ -628,6 +799,50 @@ async function main() {
     }
   }
 
+  // ============================================================
+  // 健康度 v2 辅助：季度分桶 + 复发检测（确定性算法，不依赖 LLM）
+  // 复发判定：同功能点内两条需求的标题分词（CJK bigram + 英文词）Jaccard >= 0.45，
+  //           且创建时间差 > 90 天 → 记一次复发对（同类诉求跨季度反复出现 = 设计未收敛信号）
+  // ============================================================
+  function tokenizeTitle(title) {
+    const t = String(title || '').toLowerCase();
+    const terms = new Set();
+    // 英文/数字词
+    for (const w of t.match(/[a-z0-9]+/g) || []) {
+      if (w.length >= 2) terms.add(w);
+    }
+    // CJK bigram
+    const cjk = t.replace(/[^\u4e00-\u9fff]/g, '');
+    for (let i = 0; i < cjk.length - 1; i++) terms.add(cjk.substring(i, i + 2));
+    return terms;
+  }
+  function detectRecurrence(items) {
+    const arr = items
+      .map(it => ({ terms: tokenizeTitle(it.title), ts: it.createdDate ? new Date(it.createdDate).getTime() : 0 }))
+      .filter(x => x.terms.size >= 3 && x.ts > 0)
+      .sort((a, b) => a.ts - b.ts);
+    const DAY = 24 * 3600 * 1000;
+    let pairs = 0;
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        if (arr[j].ts - arr[i].ts <= 90 * DAY) continue; // 90 天内的不算复发
+        let inter = 0;
+        for (const t of arr[i].terms) if (arr[j].terms.has(t)) inter++;
+        const union = arr[i].terms.size + arr[j].terms.size - inter;
+        if (union > 0 && inter / union >= 0.45) pairs++;
+      }
+    }
+    return pairs;
+  }
+  function quarterlyBuckets(dates) {
+    const buckets = {};
+    for (const d of dates.filter(Boolean)) {
+      const q = d.getFullYear() + '-Q' + (Math.floor(d.getMonth() / 3) + 1);
+      buckets[q] = (buckets[q] || 0) + 1;
+    }
+    return Object.keys(buckets).sort().map(q => ({ q, count: buckets[q] }));
+  }
+
   // JSON 输出模式：按功能点粒度输出 FPI 数据数组（供 AIStudio 需求归集「技能数据源」消费）
   if (JSON_MODE) {
     const fpStats = {};
@@ -648,7 +863,7 @@ async function main() {
         const st = fpStats[item.fpCode];
         st.dates.push(item.createdDate ? new Date(item.createdDate) : null);
         if (item.requirementType === '软件质量' || item.requirementType === '软质') st.soft++; else st.req++;
-        st.items.push({ id: item.id, title: item.title, state: item.state || '', type: item.workItemType || '', reqType: item.requirementType || '', createdDate: item.createdDate || '' });
+        st.items.push({ id: item.id, title: item.title, state: item.state || '', type: item.workItemType || '', reqType: item.requirementType || '', createdDate: item.createdDate || '', confidence: item.confidence || '', kbScore: item.kbScore || null });
       }
     }
     const nowTs = Date.now();
@@ -667,12 +882,25 @@ async function main() {
       // 小样本降权：工单数 < 3 时软质比惩罚减半、升温惩罚按样本量比例缩放，避免单条工单直接判危险
       let softPen = softRatio >= 1e6 ? 50 : Math.min(50, softRatio * 40);
       let trendPen = Math.min(20, Math.max(0, pct) / 20 * 4);
+      // ---- 健康度 v2（历史生命周期模式启用）：复发惩罚 + 长尾惩罚 ----
+      // 复发：同类诉求跨季度反复出现（每对扣 3，上限 15）——设计未收敛的最硬信号
+      // 长尾：需求时间跨度 >= 18 个月且仍在产生新工单（扣 5）——基线噪音排除后仍持续不收敛
+      const recurrence = detectRecurrence(st.items);
+      const quarterly = quarterlyBuckets(st.dates);
+      const sortedTs = ts;
+      const firstDate = sortedTs.length ? new Date(sortedTs[0]).toISOString().substring(0, 10) : '';
+      const lastDate = sortedTs.length ? new Date(sortedTs[sortedTs.length - 1]).toISOString().substring(0, 10) : '';
+      const spanMonths = sortedTs.length ? Math.max(0, Math.round((sortedTs[sortedTs.length - 1] - sortedTs[0]) / DAY / 30.44)) : 0;
+      let recurPen = Math.min(15, recurrence * 3);
+      let longTailPen = (spanMonths >= 18 && DEEP_MODE) ? 5 : 0;
       if (total < 3) {
         softPen = softPen / 2;
         trendPen = trendPen * (total / 3);
+        recurPen = recurPen * (total / 3);
+        longTailPen = 0;
       }
-      const fpi = Math.max(0, Math.round(100 - softPen - trendPen));
-      return { code: st.code, name: st.name, module: st.module, total, req: st.req, soft: st.soft, avgMonthly, softRatio, trend, fpi, items: st.items.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')) };
+      const fpi = Math.max(0, Math.round(100 - softPen - trendPen - recurPen - longTailPen));
+      return { code: st.code, name: st.name, module: st.module, total, req: st.req, soft: st.soft, avgMonthly, softRatio, trend, fpi, recurrence, quarterly, firstDate, lastDate, spanMonths, window: HISTORY_SINCE ? { since: HISTORY_SINCE } : (IDS_MODE.length ? { mode: 'link-ids', count: IDS_MODE.length } : null), items: st.items.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')) };
     }).sort((a, b) => a.fpi - b.fpi);
     // 未匹配功能点汇总：需求（无功能点匹配 → 建议新增）与软质（模块级归类，未挂到功能点）
     const unmatchedSoftItems = [];
@@ -699,7 +927,7 @@ async function main() {
       ]
     };
     rows.sort((a, b) => String(a.code).localeCompare(String(b.code)));
-    _consoleLog(JSON.stringify({ rows, unmatched }));
+    _consoleLog(JSON.stringify({ rows, unmatched, window: { mode: IDS_MODE.length ? 'link-ids' : (HISTORY_SINCE ? 'history' : 'default'), since: HISTORY_SINCE || null, linkIds: IDS_MODE.length ? IDS_MODE.length : null, generatedAt: new Date().toISOString(), totalWorkItems: allItems.length, kb: { enabled: SPEC_KB_ENABLED, available: kbMatch.available, queries: kbMatch.queries, hits: kbMatch.hits, skipped: kbMatch.skipped } }, rulesVersion: DEEP_MODE ? 'v2.0' : 'v1' }));
     return;
   }
 
@@ -720,7 +948,7 @@ async function main() {
     logResult('');
     logResult('# 病历需求归集');
     logResult('');
-    logResult('> **总查询工作项**: ' + allItems.length + ' 项  |  主题: 病历条线新增需求  |  数据源: TFS WINNING-6.0');
+    logResult('> **总查询工作项**: ' + allItems.length + ' 项  |  主题: ' + (IDS_MODE.length ? '数据源链接工单集合（link-ids）' : HISTORY_SINCE ? '病历条线历史需求（CreatedDate >= ' + HISTORY_SINCE + '，健康度规则 v2.0）' : '病历条线新增需求') + '  |  数据源: TFS WINNING-6.0');
     logResult('');
     logResult(mergedReport);
   }

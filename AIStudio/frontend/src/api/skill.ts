@@ -109,7 +109,9 @@ export const skillApi = {
     data?: unknown
     detectedEntries?: string[]
   }> {
-    const res = await http.post(`/skills/${name}/exec`, data || {})
+    // axios 全局超时 30s，会先于后端脚本超时断开——这里按脚本超时同步拉长前端等待（+15s 缓冲）
+    const execTimeoutMs = (data?.timeoutMs ?? 120000) + 15000
+    const res = await http.post(`/skills/${name}/exec`, data || {}, { timeout: execTimeoutMs })
     return res.data
   },
 

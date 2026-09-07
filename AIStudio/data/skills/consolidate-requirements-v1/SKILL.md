@@ -31,13 +31,27 @@ node scripts/consolidate.js --json          # 或调用参数 {"json": true}
 ```
 stdout 仅输出功能点 FPI JSON 数组：`[{code,name,module,total,req,soft,avgMonthly,softRatio,trend,fpi}]`，进度信息走 stderr。
 
-支持参数（写在调用参数 JSON 里）：`line`（inpatient/住院、outpatient/门诊、emergency/急诊，只在该条线功能点池中匹配并输出）、`queryUrl`（覆盖默认 TFS 查询）。
+支持参数（写在调用参数 JSON 里）：`line`（inpatient/住院、outpatient/门诊、emergency/急诊，只在该条线功能点池中匹配并输出）、`queryUrl`（覆盖默认 TFS 查询）、`since`（历史生命周期模式，格式 YYYY-MM-DD，见方式5）、`ids`（工单 ID 数组，见方式6）。
 
 ### 方式4：MD 报告模式（供 AIStudio 需求归集「导出 MD」下载）
 ```bash
 node scripts/consolidate.js --md            # 或调用参数 {"md": true, "line": "..."}
 ```
 执行完整聚拢流程，stdout 仅输出 MD 报告全文（进度走 stderr，不写文件）。与 JSON 模式共用 `line`/`queryUrl` 参数；两者同时传时 JSON 优先。
+
+### 方式5：历史生命周期模式（健康度规则 v2.0，推荐用于健康度分析）
+```bash
+node scripts/consolidate.js --json --since=2025-01-01   # 或 {"json": true, "since": "2025-01-01"}
+```
+不直接执行存储查询（它只是"新增需求"近期切片），而是按数据口径自建 WIQL，拉取 **CreatedDate >= 指定日期的全量需求+软质**（横跨 WiNEX-Inpatient-2 / WiNEX-Outpatient / WiNEX-Emergency 三个项目，实测 2025-01-01 起约 1.9 万项，运行约 1 分钟）。其余管道（基线过滤/语义匹配/聚拢）全部复用，JSON 输出增加 `recurrence`（复发对数）、`quarterly`（季度分桶）、`firstDate`/`lastDate`/`spanMonths` 字段，FPI 启用 **v2 公式**（新增复发惩罚 ≤15 + 长尾惩罚 5）。健康度判定规则见 `references/design-rationality-rules.md` **v2.0**（量化 HPI 与五维评审双轨融合 + 一票否决 V1-V6）。
+
+> ✅ **2026-09-07 起页面"技能数据源"数据口径**：前端在归集时把该条线**数据源链接拉取到的「剩余需求+剩余软质」工单 ID 去重合集**注入 `ids` 参数（方式6），FPI 严格按链接拉取的未完结数据统计（剩余需求=需求类且状态∈已建议/活动/已分析；剩余软质=软质类且状态非完结态，口径与归集统计表一致）；链接未拉取到数据时回退注入 `{"json":true,"since":"2025-01-01"}` 全量口径。用户显式传 ids/since/md/queryUrl 时不注入。`executeSkill` 传 `timeoutMs:180000` 且 axios 超时随其后（原全局 30s 会先断），后端 stdout 截断上限已从 2MB 放宽至 8MB。ids 模式实测 <1s，历史口径端到端约 64s。
+
+### 方式6：链接工单集合模式（`ids` 参数，需求归集页面 FPI 默认口径）
+```bash
+node scripts/consolidate.js --json --ids=1750924,1750925   # 或 {"json": true, "ids": [1750924, ...]}
+```
+对外部传入的工单 ID 集合（去重）直接批量拉详情并走完整聚拢管道（基线过滤/语义匹配/功能点 FPI），**跳过 WIQL 查询**——即"按数据源链接拉取的剩余需求+剩余软质进行统计"（ID 集合由前端按剩余口径过滤后传入，技能原样消费）。优先级高于 `since`；启用 v2 健康度公式（复发/长尾惩罚）；JSON 顶层 `window.mode='link-ids'`、`linkIds` 为传入数量。实测 187 项 794ms 完成，适合页面实时调用。
 
 ## 工作流程
 
@@ -91,11 +105,12 @@ node ~/.claude/skills/consolidate-requirements-v1/scripts/consolidate.js \
   "E:\37结构性问题治理\07病历条线需求聚拢\病历新增需求归集-20260819.md"
 ```
 
-### 步骤5：匹配流程（四阶段漏斗）
+### 步骤5：匹配流程（五阶段漏斗）
 
 ```
 获取需求 → 先基线判断 → 基线能力 → 标记基线排除 ✔
-                      → 应纳入功能点 → 语义匹配 → 归入现有功能点 ✔
+                      → 应纳入功能点 → 语义/关键词匹配 → 归入现有功能点 ✔
+                                        → Spec 知识库匹配（FTS 分词+投票）→ 归入现有功能点 ✔（confidence=spec-kb）
                                         → 无匹配
                                             ├─ 软质项 → 归入模块级软质统计 ✔
                                             └─ 非软质 → 建议新增功能点 ⭐
@@ -115,13 +130,17 @@ node ~/.claude/skills/consolidate-requirements-v1/scripts/consolidate.js \
 
 #### 阶段2：语义匹配（LLM 映射表）
 
-通过基线的需求，使用 AI 语义映射表匹配到最合适的 Spec 功能点。映射表由 AI 根据需求标题+描述语义判断，比关键词匹配更准确。
+通过基线的需求，先查 AI 语义映射表（`semantic-fp-map.json`，需求 ID → 功能点精确映射）；未命中再按精标关键词库（`fp-map.js`）打分匹配（功能点名称出现 +3、关键词命中、TFS 模块归属加分，阈值 ≥2 分）。
 
-#### 阶段3：软质项兜底
+#### 阶段3：文书 Spec 知识库匹配（2026-09-07 新增）
+
+关键词未命中时，把工单标题**按领域词表分词**（Spec 功能点名称 2-gram + 业务特征词，滤除噪音），调 AIStudio 知识库 FTS 检索（`GET /api/knowledge/search?q=词1 词2...&topK=6&productLine=...`，productLine 按条线映射 BLGL→inpatient-emr / MZBL→outpatient-emr / JZBL→emergency-emr），对 topK 命中结果**按功能点投票**——同一功能点的多篇 Spec 文档（-Spec / -Analyst-spec / -PM-spec）命中 ≥2 票才采纳，归入该功能点并标记 `confidence='spec-kb'`。只采纳 Spec 树内功能点；默认启用（`{"specKb": false}` 关闭，`kbApi` 可指定平台地址）；每标题有缓存，查询上限 400 次/运行，平台不可达时自动降级跳过。适用于新需求词库未覆盖的场景；JSON `window.kb` 输出查询/命中统计。
+
+#### 阶段4：软质项兜底
 
 语义匹配不到的软质项（`requirementType = '软件质量'`），按模块级归类，归入软质统计。连模块都匹配不到的软质项，归入基线排除。
 
-#### 阶段4：模块级匹配（兜底）
+#### 阶段5：模块级匹配（兜底）
 
 语义匹配不到的非软质需求，先按 TFS 模块名称映射，再按关键词匹配到模块级。如果仍匹配不到，标记为"建议新增功能点"。
 
@@ -167,6 +186,8 @@ node ~/.claude/skills/consolidate-requirements-v1/scripts/consolidate.js \
 |:-----|:-----:|:--------:|:-----|
 | BLGL-10-BLCX-003 病历结构化查询 | 14 | 🔴 危险 | 新增需求过载，需考虑重构 |
 ```
+
+> **v2.0 起健康度判定为双轨融合**：量化 HPI（脚本 `--json` 输出的 `fpi` 字段，历史模式含复发/长尾惩罚）× 五维评审（`references/design-rationality-rules.md` v2.0），最终等级查融合矩阵；一票否决扩展为 V1-V6（新增 V6 复发性设计缺陷）。仅凭 HPI/问题数直接定级是不完整的——③法规合规、④竞品差距必须独立评审。
 
 ## 聚拢规则
 
@@ -217,6 +238,13 @@ node ~/.claude/skills/consolidate-requirements-v1/scripts/consolidate.js \
 
 ### R27 过滤
 - `ResolvedDate = ''` OR `ResolvedDate ≠ ClosedDate`
+
+### 历史生命周期模式（v2.0，`--since` 启用）的数据口径
+- 自建 WIQL，**不经过存储查询**：`CreatedDate >= since` + 产品名 IN（三产品）+ 类型 IN（需求/软质）+ AreaPath 排除两个质控区域
+- R27 过滤在 WIQL 中带上；字段在部分类型上不存在导致查询失败时自动降级去掉
+- 实测规模：2025-01-01 起约 1.9 万项，批量详情拉取约 95 批，整体运行约 1 分钟
+- FPI v2 公式：`100 − 软质比惩罚(≤50) − 升温惩罚(≤20) − 复发惩罚(每对扣3, ≤15) − 长尾惩罚(跨度≥18个月扣5)`；工单数 < 3 时全部惩罚按样本量缩放
+- 复发检测：同功能点内标题分词（CJK bigram + 英文词）Jaccard ≥ 0.45 且时间差 > 90 天记一对复发
 
 ### 需求分类
 | 类别 | 定义 |

@@ -101,7 +101,7 @@
           />
           <template v-else-if="skillRows(lineKey).length">
             <div class="fpi-note">
-              数据来源：技能「{{ skillToolLabel(lineKey) }}」返回的全部功能点数据（覆盖 {{ skillRows(lineKey).length }} 个功能点，含未产生工单的功能点）。
+              数据来源：{{ skillResults[String(lineKey)]?.scope || `技能「${skillToolLabel(lineKey)}」返回的全部功能点数据（覆盖 ${skillRows(lineKey).length} 个功能点，含未产生工单的功能点）` }}。
             </div>
             <div class="level-chips">
               <div
@@ -353,7 +353,7 @@
           v-if="fpiAnalysisRow.level" size="small" effect="dark"
           :color="FPI_LEVEL_META[fpiAnalysisRow.level].color" style="border: none"
         >{{ FPI_LEVEL_META[fpiAnalysisRow.level].label }}</el-tag>
-        <span class="filter-count">FPI {{ fpiAnalysisRow.fpi ?? '—' }} · 工单 {{ fpiAnalysisRow.total ?? '—' }} · 需求 {{ fpiAnalysisRow.req ?? '—' }} · 软质 {{ fpiAnalysisRow.soft ?? '—' }} · 趋势 {{ fpiAnalysisRow.trendText || '—' }}</span>
+        <span class="filter-count">FPI {{ fpiAnalysisRow.fpi ?? '—' }} · 工单 {{ fpiAnalysisRow.total ?? '—' }} · 需求 {{ fpiAnalysisRow.req ?? '—' }} · 软质 {{ fpiAnalysisRow.soft ?? '—' }} · 趋势 {{ fpiAnalysisRow.trendText || '—' }}<template v-if="fpiAnalysisRow.sampleInsufficient"> · ⚠️ 样本不足（工单 &lt; 5），默认按健康登记</template></span>
       </div>
 
       <!-- 三段内容以 Tab 展示 -->
@@ -535,6 +535,8 @@ interface FpiSkillRow {
   trendPct: number | null
   fpi: number | null
   level: FpiLevel | ''
+  /** 小样本保护：工单总数 < 5 时不定级（避免少量 BUG 把软质比拉满误判为危险） */
+  sampleInsufficient?: boolean
   /** 未匹配功能点的工单行（功能点列显示 -） */
   _unmatched?: boolean
   _title?: string
@@ -562,7 +564,7 @@ interface FpiUnmatched {
   reqItems?: { id: string; title: string; state: string; module: string; suggestedCode: string }[]
   softItems?: { id: string; title: string; state: string; module: string }[]
 }
-interface SkillResult { rows: FpiSkillRow[]; error: string; toolLabel: string; unmatched?: FpiUnmatched }
+interface SkillResult { rows: FpiSkillRow[]; error: string; toolLabel: string; unmatched?: FpiUnmatched; /** 数据口径说明（链接工单集合 / 技能全量回退） */ scope?: string }
 const skillResults = reactive<Record<string, SkillResult | null>>({ inpatient: null, outpatient: null, emergency: null })
 
 const { renderMarkdown } = useMarkdown()
@@ -1175,6 +1177,39 @@ function parseArgsText(t: string): Record<string, any> {
   } catch { return {} }
 }
 
+/**
+ * consolidate-requirements 技能参数注入：
+ * ① 优先注入 ids——本条线「数据源链接」拉取到的「剩余需求+剩余软质」工单 ID 去重合集，
+ *    FPI 严格按链接拉取的未完结数据统计（口径与归集统计表一致）；
+ * ② 无链接数据时回退注入 since=2025-01-01 全量口径（技能自己拉历史需求）。
+ * 用户显式传了 ids / since / md / queryUrl 时完全尊重配置，不注入。
+ */
+/**
+ * 从数据源链接拉取结果中提取「剩余需求 + 剩余软质」工单 ID 合集（去重）。
+ * 口径与归集统计表一致：
+ * - 剩余需求：需求类（需求/功能性的/接口，且非软质）且状态 ∈ 已建议/活动/已分析
+ * - 剩余软质：软质类（软件质量/Bug，或 RequirementType=软件质量/软质）且状态非完结态
+ * 健康度只反映"尚未消化的设计压力"，已完结/已解决的工单不计入 FPI 统计。
+ */
+function collectLinkIds(lineKey: string | number): number[] {
+  const ids = new Set<number>()
+  for (const r of linkResults[String(lineKey)] || []) {
+    for (const it of r.items || []) {
+      const state = (it.state || '').trim()
+      const isRemainReq = isReqItem(it) && OPEN_REQ_STATES.includes(state)
+      const isRemainSoft = isSoftItem(it) && !DONE_STATES.includes(state)
+      if (isRemainReq || isRemainSoft) ids.add(it.id)
+    }
+  }
+  return [...ids]
+}
+function mergeConsolidateArgs(skillName: string, args: Record<string, any>, linkIds?: number[]): Record<string, any> {
+  if (!/consolidate-requirements/i.test(skillName || '')) return args
+  if ('ids' in args || 'since' in args || 'md' in args || 'queryUrl' in args) return args
+  if (linkIds && linkIds.length) return { ...args, json: true, ids: linkIds }
+  return { ...args, json: true, since: '2025-01-01' }
+}
+
 /** 从技能返回值中取出记录数组：优先按 resultPath，其次识别常见包裹字段 */
 function extractArray(raw: any, resultPath?: string): any[] {
   let node: any = raw
@@ -1251,11 +1286,17 @@ function normalizeFpiRow(raw: any): FpiSkillRow {
   const fpi = num(pickField(raw, 'fpi'))
   const softRatio = num(pickField(raw, 'softRatio'))
   const trendRaw = pickField(raw, 'trend')
+  const totalNum = num(pickField(raw, 'total'))
+  const levelRaw = normalizeLevel(pickField(raw, 'level'), fpi)
+  // 小样本保护：工单总数 < 5 时不按公式定级（短窗口下几条 BUG 就能把软质比拉满，如"诊断管理"
+  // 4 条全软质 → FPI 30 → 危险，判定不可靠）。按用户口径默认登记为「健康」，sampleInsufficient
+  // 标记保留，供分析弹窗提示"样本不足"
+  const insufficient = totalNum !== null && totalNum < 5
   return {
     code: String(pickField(raw, 'code') ?? ''),
     name: String(pickField(raw, 'name') ?? ''),
     module: String(pickField(raw, 'module') ?? ''),
-    total: num(pickField(raw, 'total')),
+    total: totalNum,
     req: num(pickField(raw, 'req')),
     soft: num(pickField(raw, 'soft')),
     avgMonthly: num(pickField(raw, 'avgMonthly')),
@@ -1264,7 +1305,8 @@ function normalizeFpiRow(raw: any): FpiSkillRow {
     trendText: trendRaw === undefined ? '' : String(trendRaw),
     trendPct: trendPctOf(trendRaw),
     fpi,
-    level: normalizeLevel(pickField(raw, 'level'), fpi),
+    level: insufficient ? 'health' : levelRaw,
+    sampleInsufficient: insufficient,
     items: Array.isArray(raw.items)
       ? raw.items.map((x: any) => ({
           id: x?.id ?? '',
@@ -1306,7 +1348,8 @@ async function testSkillCall() {
       // 平台技能：执行脚本
       const res = await skillApi.executeSkill(draftSkill.skillName.trim(), {
         entry: draftSkill.entry.trim() || undefined,
-        args: parseArgsText(draftSkill.argumentsText)
+        args: mergeConsolidateArgs(draftSkill.skillName.trim(), parseArgsText(draftSkill.argumentsText), collectLinkIds(editLine.value)),
+        timeoutMs: 180000
       })
       if (!res.success) {
         skillTestInfo.value = `执行失败（exit=${res.exitCode ?? '超时'}）：${(res.stderr || res.stdout || '无输出').slice(0, 300)}`
@@ -1375,12 +1418,19 @@ async function fetchSkillFpi(lineKey: string) {
   const toolLabel = isMcp ? cfg.toolName : `${cfg.skillName} · ${cfg.entry || '自动入口'}`
   try {
     let raw: any
+    let scope: string | undefined
     if (isMcp) {
       raw = await mcpApi.callTool(cfg.serverId, cfg.toolName, parseArgsText(cfg.argumentsText))
     } else {
+      // consolidate 技能：优先按数据源链接拉取的工单集合统计
+      const linkIds = collectLinkIds(lineKey)
+      scope = linkIds.length
+        ? `统计自数据源链接拉取的剩余需求+剩余软质共 ${linkIds.length} 条工单（去重），由技能映射到功能点并计算健康度`
+        : '未拉取到链接数据，回退技能全量口径（2025-01-01 起需求+软质）'
       const res = await skillApi.executeSkill(cfg.skillName, {
         entry: cfg.entry || undefined,
-        args: parseArgsText(cfg.argumentsText)
+        args: mergeConsolidateArgs(cfg.skillName, parseArgsText(cfg.argumentsText), linkIds),
+        timeoutMs: 180000
       })
       if (!res.success) {
         skillResults[lineKey] = { rows: [], error: `执行失败（exit=${res.exitCode ?? '超时'}）：${(res.stderr || res.stdout || '无输出').slice(0, 300)}`, toolLabel }
@@ -1392,7 +1442,7 @@ async function fetchSkillFpi(lineKey: string) {
     // 未匹配功能点汇总（技能输出 { rows, unmatched } 对象时携带）
     const unmatched: FpiUnmatched | undefined =
       raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as any).unmatched ? (raw as any).unmatched : undefined
-    skillResults[lineKey] = { rows, error: rows.length ? '' : '技能返回内容中未解析出功能点数组（检查脚本输出/结果路径）', toolLabel, unmatched }
+    skillResults[lineKey] = { rows, error: rows.length ? '' : '技能返回内容中未解析出功能点数组（检查脚本输出/结果路径）', toolLabel, unmatched, scope }
   } catch (e: any) {
     skillResults[lineKey] = { rows: [], error: e?.response?.data?.error || e?.message || '技能调用失败', toolLabel }
   }

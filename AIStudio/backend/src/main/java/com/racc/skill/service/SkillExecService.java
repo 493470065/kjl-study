@@ -30,7 +30,7 @@ import java.util.stream.Stream;
  *   - 参数：请求 args 为 JSON 数组时逐项作为 CLI 参数；对象参数不进 CLI（Windows 命令行解析会剥掉
  *     双引号导致 JSON 损坏），仅通过环境变量 SKILL_ARGS_JSON 传递，脚本从该变量读取完整 JSON
  *   - 安全：脚本路径必须位于技能目录内、扩展名白名单；技能被 .disabled 禁用时拒绝执行
- *   - 输出：stdout/stderr 各截断至 2MB；stdout 可解析为 JSON（对象/数组）时填充 data 字段
+ *   - 输出：stdout/stderr 各截断至 8MB；stdout 可解析为 JSON（对象/数组）时填充 data 字段
  */
 @Service
 public class SkillExecService {
@@ -40,7 +40,7 @@ public class SkillExecService {
     private static final Set<String> ALLOWED_EXT =
             Set.of("js", "mjs", "cjs", "py", "pyw", "ps1", "cmd", "bat", "sh");
     private static final String[] AUTO_DETECT_NAMES = {"run", "main", "index"};
-    private static final int OUTPUT_LIMIT = 2 * 1024 * 1024;
+    private static final int OUTPUT_LIMIT = 8 * 1024 * 1024;
 
     private final Path skillsBaseDir;
     private final ObjectMapper objectMapper = new ObjectMapper();
