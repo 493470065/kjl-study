@@ -9,7 +9,14 @@ AIStudio/tools/jdk-17.0.20+8/
 AIStudio/tools/apache-maven-3.9.16/
 
 # ===== 运行时数据（上传文件、日志、数据库等，体积大且随运行变化）=====
-AIStudio/data/
+# data 下全部忽略，仅放行 skills 技能包（SKILL.md/references/scripts 属于资产需版本管理）
+AIStudio/data/*
+!AIStudio/data/skills/
+# 技能包内的运行时产物与缓存
+AIStudio/data/skills/**/node_modules/
+AIStudio/data/skills/**/*.log
+AIStudio/data/skills/**/tmp/
+AIStudio/data/skills/**/.cache/
 
 # ===== 环境变量文件（含 API 密钥，不入库；参考对应的 .example 模板）=====
 AIStudio/tools/env.cmd
