@@ -368,6 +368,7 @@ import { tfsApi, type TfsWorkItem, type TfsProject, type TfsAttachment } from '@
 import { mcpApi, type McpServer, type McpToolInfo } from '@/api/mcp'
 import MarkdownIt from 'markdown-it'
 import { formatDateTime, formatDate as formatDateOnly } from '@/utils/format'
+import { loadPref, savePref } from '@/utils/userPrefs'
 
 const router = useRouter()
 
@@ -458,9 +459,8 @@ function cloneDefaultConfig(): ReqboardConfig {
 
 function loadLocalConfig(): ReqboardConfig {
   try {
-    const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return cloneDefaultConfig()
-    const parsed = JSON.parse(raw)
+    const parsed = loadPref<Partial<ReqboardConfig> | null>(LS_KEY, null)
+    if (!parsed) return cloneDefaultConfig()
     return {
       queryIds: { ...DEFAULT_CONFIG.queryIds, ...(parsed.queryIds || {}) },
       sources: { ...DEFAULT_CONFIG.sources, ...(parsed.sources || {}) },
@@ -472,13 +472,38 @@ function loadLocalConfig(): ReqboardConfig {
 }
 
 function saveLocalConfig(cfg: ReqboardConfig) {
-  localStorage.setItem(LS_KEY, JSON.stringify(cfg))
+  savePref(LS_KEY, cfg)
 }
 
 // 每个 Tab 的查询 ID：优先取本地配置，否则用默认值
 const configuredQueryIds = reactive<Record<string, string>>({})
 const configuredSources = reactive<Record<string, TabSource>>({})
 const configuredMcp = reactive<Record<string, McpTabConfig>>({})
+
+// 后端校准：首次 loadPref 会触发一次后端比对，后端有不同值时派发本事件，用后端配置刷新视图消费的状态
+function applyBackendConfig(cfg: Partial<ReqboardConfig> | null) {
+  if (!cfg) return
+  if (cfg.queryIds) {
+    // queryIds 兼容两种历史键：configKey（reqboard.query.{tab}）与 tab.key（视图只消费 configKey）
+    for (const t of TABS) {
+      const q = cfg.queryIds[t.configKey] ?? cfg.queryIds[t.key]
+      if (q) configuredQueryIds[t.configKey] = q
+    }
+  }
+  if (cfg.sources) {
+    for (const [k, v] of Object.entries(cfg.sources)) {
+      configuredSources[k] = v === 'mcp' ? 'mcp' : 'tfs'
+    }
+  }
+  if (cfg.mcp) {
+    for (const [k, v] of Object.entries(cfg.mcp)) {
+      if (v) configuredMcp[k] = v
+    }
+  }
+}
+window.addEventListener(`userprefs-updated:${LS_KEY}`, (e) => {
+  applyBackendConfig((e as CustomEvent).detail)
+})
 
 const activeTabDef = computed<TabDef>(() => TABS.find(t => t.key === activeTab.value) || TABS[0])
 const activeQueryId = computed(() =>
@@ -546,11 +571,8 @@ interface ReqboardUi { activeTab?: string; perTab: Record<string, TabUiState> }
 
 function loadReqboardUi(): ReqboardUi {
   try {
-    const raw = localStorage.getItem(LS_UI_KEY)
-    if (raw) {
-      const o = JSON.parse(raw)
-      if (o && typeof o === 'object') return { activeTab: String(o.activeTab || ''), perTab: o.perTab || {} }
-    }
+    const o = loadPref<Partial<ReqboardUi> | null>(LS_UI_KEY, null)
+    if (o && typeof o === 'object') return { activeTab: String(o.activeTab || ''), perTab: o.perTab || {} }
   } catch { /* 忽略损坏的缓存 */ }
   return { perTab: {} }
 }
@@ -563,7 +585,7 @@ function persistTabUi() {
       state: stateFilter.value, id: idFilter.value, product: productFilter.value,
       customer: customerFilter.value, overdue: overdueFilter.value, pageSize: pageSize.value
     }
-    localStorage.setItem(LS_UI_KEY, JSON.stringify(reqUi))
+    savePref(LS_UI_KEY, reqUi)
   } catch { /* 忽略容量错误 */ }
 }
 
