@@ -2,6 +2,7 @@ package com.racc.userpref.service;
 
 import com.racc.userpref.entity.UserPreferenceEntity;
 import com.racc.userpref.repository.UserPreferenceRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,8 +40,21 @@ public class UserPreferenceService {
                 .orElse(null);
     }
 
+    /**
+     * upsert：优先走"查到即更新"分支；并发下唯一约束冲突时重查一次改走更新，收敛竞争窗口。
+     * （check-then-insert 在并发 PUT 同 key 时，第二个提交会撞 (user_id, pref_key) 唯一约束，
+     * 捕获 DataIntegrityViolationException 后重查——对方已提交，此分支必然命中既有行。）
+     */
     public void savePref(Long userId, String key, String jsonValue) {
         validateKey(key);
+        try {
+            doSavePref(userId, key, jsonValue);
+        } catch (DataIntegrityViolationException e) {
+            doSavePref(userId, key, jsonValue);
+        }
+    }
+
+    private void doSavePref(Long userId, String key, String jsonValue) {
         UserPreferenceEntity entity = repository.findByUserIdAndPrefKey(userId, key)
                 .orElseGet(() -> {
                     UserPreferenceEntity e = new UserPreferenceEntity();

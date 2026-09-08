@@ -93,4 +93,12 @@ class UserPreferenceServiceTest {
                 () -> service.savePref(1L, "bad/key", "{}"));
         verify(repository, never()).save(any());
     }
+
+    // ---------- 读取时 key 校验生效 ----------
+
+    @Test
+    void getPref_非法key_抛出IllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> service.getPref(1L, "bad/key"));
+        verify(repository, never()).findByUserIdAndPrefKey(any(), any());
+    }
 }

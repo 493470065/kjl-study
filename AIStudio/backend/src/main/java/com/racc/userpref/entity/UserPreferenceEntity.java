@@ -22,7 +22,7 @@ public class UserPreferenceEntity {
     @Column(name = "pref_key", nullable = false, length = 64)
     private String prefKey;
 
-    @Column(name = "pref_value", columnDefinition = "TEXT")
+    @Column(name = "pref_value", columnDefinition = "LONGTEXT")
     private String prefValue;
 
     @Column(name = "updated_at")
