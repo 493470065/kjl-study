@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import http from '@/api/http'
+import { resetUserPrefsCache, clearLocalPrefs } from '@/utils/userPrefs'
 
 interface UserInfo {
   username: string
@@ -78,6 +79,9 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem('auth')
     sessionStorage.removeItem('auth')
+    // 清理偏好缓存与本地偏好值：防止换账号登录后看到前一用户的配置
+    resetUserPrefsCache()
+    clearLocalPrefs()
   }
 
   loadFromStorage()
