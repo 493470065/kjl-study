@@ -281,6 +281,25 @@
   </page-container>
 </template>
 
+<script lang="ts">
+// ===== 模块级缓存：技能列表不随组件销毁丢失 =====
+// 重新进入页面时直接展示上次数据，不再等待 3s（后端要为 23 个技能各起一个 git 子进程）；
+// 数据更新由工具栏「刷新」按钮人工触发，或超过 TTL 后后台静默刷新。
+import type { SkillSummary } from '@/api/skill'
+
+interface SkillListSnapshot {
+  list: SkillSummary[]
+  fetchedAt: number
+}
+const skillListSnapshot: { value: SkillListSnapshot | null } = { value: null }
+/** 快照有效期：超过则重进页面时后台静默刷新一次（不显示 loading） */
+const SKILL_SNAPSHOT_TTL_MS = 5 * 60 * 1000
+/** 上次选中的技能：重进页面保持原位，不再每次跳回第一个重拉详情 */
+const lastSelected: { name: string } = { name: '' }
+
+export default {}
+</script>
+
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, markRaw, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -470,7 +489,7 @@ async function submitTag() {
     if (t && !knownTags.value.includes(t)) knownTags.value.push(t)
     ElMessage.success(t ? `已设置标识「${t}」` : '已清除标识')
     tagDialogVisible.value = false
-    await loadSkillList()
+    await loadSkillList({ force: true })
   } catch (e: any) {
     ElMessage.error('保存标识失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
   } finally {
@@ -503,24 +522,47 @@ const markdownPreview = computed(() => {
 })
 
 // ── Load Skills ───────────────────────────────────────────────────────────────
-async function loadSkillList() {
-  loadingSkills.value = true
+/**
+ * @param silent 静默刷新：不显示加载态（后台 SWR 用）
+ * @param force  强制重扫：忽略前端快照与后端 60s 缓存（用户点「刷新」用）
+ */
+async function loadSkillList(opts: { silent?: boolean, force?: boolean } = {}) {
+  const snap = skillListSnapshot.value
+  // 有未过期快照：直接秒显，不进 loading
+  if (!opts.force && snap && Date.now() - snap.fetchedAt < SKILL_SNAPSHOT_TTL_MS) {
+    skillList.value = snap.list
+    ensureSelection()
+    return
+  }
+  if (!opts.silent) loadingSkills.value = true
   try {
-    skillList.value = await skillApi.listSkills()
-    // 默认打开第一个技能：当前未选中，或选中的技能已被删除时，自动选中左侧列表第一项
-    const first = groupedSkills.value[0]?.items[0]
-    if (first && !skillList.value.some(s => s.name === selectedSkillName.value)) {
-      selectSkill(first.name)
-    }
+    const list = await skillApi.listSkills(!!opts.force)
+    skillList.value = list
+    skillListSnapshot.value = { list, fetchedAt: Date.now() }
+    ensureSelection()
   } catch {
-    ElMessage.error('加载 Skill 列表失败')
+    if (!opts.silent) ElMessage.error('加载 Skill 列表失败')
   } finally {
-    loadingSkills.value = false
+    if (!opts.silent) loadingSkills.value = false
+  }
+}
+
+/** 保证有选中项：优先沿用上次选中的技能，否则取列表第一项 */
+function ensureSelection() {
+  const first = groupedSkills.value[0]?.items[0]
+  if (!first) return
+  const prev = lastSelected.name
+  if (prev && skillList.value.some(s => s.name === prev)) {
+    if (prev !== selectedSkillName.value) selectSkill(prev)
+    return
+  }
+  if (!skillList.value.some(s => s.name === selectedSkillName.value)) {
+    selectSkill(first.name)
   }
 }
 
 async function handleRefreshSkills() {
-  await loadSkillList()
+  await loadSkillList({ force: true })
   ElMessage.success('Skill 列表已刷新')
 }
 
@@ -528,7 +570,7 @@ async function handleDisableSkill(name: string) {
   try {
     await skillApi.disableSkill(name)
     ElMessage.success(`已停用: ${name}`)
-    await loadSkillList()
+    await loadSkillList({ force: true })
   } catch {
     ElMessage.error('操作失败')
   }
@@ -538,7 +580,7 @@ async function handleEnableSkill(name: string) {
   try {
     await skillApi.enableSkill(name)
     ElMessage.success(`已启用: ${name}`)
-    await loadSkillList()
+    await loadSkillList({ force: true })
   } catch {
     ElMessage.error('操作失败')
   }
@@ -548,7 +590,7 @@ async function handleEnableCopySkill(name: string) {
   try {
     await skillApi.enableCopySkill(name)
     ElMessage.success(`已启用复制: ${name}`)
-    await loadSkillList()
+    await loadSkillList({ force: true })
   } catch {
     ElMessage.error('操作失败')
   }
@@ -558,7 +600,7 @@ async function handleDisableCopySkill(name: string) {
   try {
     await skillApi.disableCopySkill(name)
     ElMessage.success(`已取消复制: ${name}`)
-    await loadSkillList()
+    await loadSkillList({ force: true })
   } catch {
     ElMessage.error('操作失败')
   }
@@ -567,6 +609,7 @@ async function handleDisableCopySkill(name: string) {
 // ── Select Skill ──────────────────────────────────────────────────────────────
 async function selectSkill(name: string) {
   selectedSkillName.value = name
+  lastSelected.name = name
   selectedFilePath.value = ''
   fileContent.value = ''
   previewMode.value = false
@@ -656,7 +699,7 @@ async function submitUpload() {
     uploadDialogVisible.value = false
     uploadName.value = ''
     uploadFile.value = null
-    await loadSkillList()
+    await loadSkillList({ force: true })
     selectSkill(result.name)
   } catch (err: any) {
     const msg = err?.response?.data?.error || err?.message || ''
@@ -714,7 +757,7 @@ async function handleDelete(name?: string) {
       selectedFilePath.value = ''
       fileContent.value = ''
     }
-    await loadSkillList()
+    await loadSkillList({ force: true })
   } catch {
     ElMessage.error('删除失败，请稍后重试')
   }
@@ -749,7 +792,15 @@ function onDocClick() {
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null
 
 onMounted(() => {
-  loadSkillList()
+  // 有快照先秒显；超过 TTL 再后台静默刷新（不 loading），用户无感知
+  const snap = skillListSnapshot.value
+  if (snap && Date.now() - snap.fetchedAt < SKILL_SNAPSHOT_TTL_MS) {
+    skillList.value = snap.list
+    ensureSelection()
+    loadSkillList({ silent: true })
+  } else {
+    loadSkillList()
+  }
   document.addEventListener('click', onDocClick)
   keydownHandler = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {

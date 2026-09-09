@@ -36,8 +36,9 @@ export interface GitInfo {
 }
 
 export const skillApi = {
-  async listSkills(): Promise<SkillSummary[]> {
-    const res = await http.get<SkillSummary[]>('/skills')
+  /** force=true 时忽略后端 60s 缓存强制重扫目录（用户点「刷新」时用） */
+  async listSkills(force = false): Promise<SkillSummary[]> {
+    const res = await http.get<SkillSummary[]>('/skills', { params: force ? { force: true } : {} })
     return res.data
   },
 

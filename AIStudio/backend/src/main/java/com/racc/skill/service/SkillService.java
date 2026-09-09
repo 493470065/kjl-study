@@ -12,6 +12,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -42,14 +46,62 @@ public class SkillService {
 
     // ==================== 列表 ====================
 
+    /**
+     * 列表缓存（TTL 60s）。
+     * 原因：buildSummary 会为每个技能 spawn 一个 `git log -1` 子进程，23 个技能实测 3s，
+     * 每次打开/刷新技能管理页都要全量重算。技能目录变更频率极低，缓存 + 写操作失效即可。
+     */
+    private static final long LIST_CACHE_TTL_MS = 60_000L;
+    /** 扫描用线程池：专门跑 `git` 子进程（阻塞 IO），不占用 ForkJoinPool.commonPool */
+    private final ExecutorService skillScanExecutor = Executors.newFixedThreadPool(8, r -> {
+        Thread t = new Thread(r, "skill-scan-");
+        t.setDaemon(true);
+        return t;
+    });
+    private volatile List<SkillSummary> listCache;
+    private volatile long listCacheAt;
+
+    /** 技能目录发生变化后调用（创建/删除/克隆/上传/启停/打标/拉取/增删文件） */
+    public void invalidateListCache() {
+        listCache = null;
+        gitInfoCache.clear();
+    }
+
     public List<SkillSummary> listSkills() {
+        return listSkills(false);
+    }
+
+    /**
+     * @param force true 时忽略缓存强制重算（前端「刷新」按钮；手工改动技能目录后立即生效）
+     */
+    public List<SkillSummary> listSkills(boolean force) {
+        List<SkillSummary> cached = listCache;
+        if (!force && cached != null && System.currentTimeMillis() - listCacheAt < LIST_CACHE_TTL_MS) {
+            return cached;
+        }
         File[] dirs = skillsBaseDir.toFile().listFiles(File::isDirectory);
         if (dirs == null) return Collections.emptyList();
 
-        return Arrays.stream(dirs)
-                .map(this::buildSummary)
-                .sorted(Comparator.comparing(SkillSummary::getName))
-                .collect(Collectors.toList());
+        // 并行构建：git 子进程逐个串行是主要耗时来源（3s → 约 0.9s）。
+        // 用专用线程池而非 commonPool——waitFor 是阻塞 IO，占满公共池会拖累其他并行任务。
+        List<SkillSummary> list = new ArrayList<>(dirs.length);
+        List<CompletableFuture<SkillSummary>> futures = new ArrayList<>(dirs.length);
+        for (File d : dirs) {
+            futures.add(CompletableFuture.supplyAsync(() -> buildSummary(d), skillScanExecutor));
+        }
+        for (CompletableFuture<SkillSummary> f : futures) {
+            try {
+                SkillSummary s = f.get();
+                if (s != null) list.add(s);
+            } catch (Exception e) {
+                log.warn("构建技能摘要失败: {}", e.getMessage());
+            }
+        }
+        list.sort(Comparator.comparing(SkillSummary::getName));
+
+        listCache = list;
+        listCacheAt = System.currentTimeMillis();
+        return list;
     }
 
     // ==================== 详情 ====================
@@ -101,6 +153,7 @@ public class SkillService {
                     "version: \"0.1.0\"\n" +
                     "---\n\n# " + name + "\n\n";
             Files.writeString(skillDir.resolve("skill.md"), defaultContent, StandardCharsets.UTF_8);
+            invalidateListCache();
             return Map.of("name", name, "directory", skillDir.toString());
         } catch (IOException e) {
             throw new RuntimeException("创建技能失败: " + name, e);
@@ -116,6 +169,7 @@ public class SkillService {
         }
         try {
             deleteDirectory(skillDir);
+            invalidateListCache();
         } catch (IOException e) {
             throw new RuntimeException("删除技能失败: " + name, e);
         }
@@ -136,6 +190,7 @@ public class SkillService {
             Process process = pb.start();
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             int exitCode = process.waitFor();
+            invalidateListCache();
             return Map.of("output", output, "success", exitCode == 0);
         } catch (Exception e) {
             return Map.of("output", e.getMessage(), "success", false);
@@ -144,15 +199,39 @@ public class SkillService {
 
     // ==================== Git 信息 ====================
 
+    /** git 信息缓存（TTL 60s）：一次详情要串行 spawn 3 个 git 进程，实测 0.44s */
+    private static final long GIT_CACHE_TTL_MS = 60_000L;
+    private static final class CacheEntry<T> {
+        final long at; final T value;
+        CacheEntry(long at, T value) { this.at = at; this.value = value; }
+    }
+    private final Map<String, CacheEntry<GitInfo>> gitInfoCache = new ConcurrentHashMap<>();
+
     public GitInfo getGitInfo(String name) {
         Path skillDir = resolveSkillDir(name);
         if (!Files.exists(skillDir)) {
             throw new NoSuchElementException("技能不存在: " + name);
         }
+        CacheEntry<GitInfo> cached = gitInfoCache.get(name);
+        if (cached != null && System.currentTimeMillis() - cached.at < GIT_CACHE_TTL_MS) {
+            return cached.value;
+        }
+        // 3 个 git 命令并行执行（log / remote.origin.url / rev-parse）
+        CompletableFuture<String> fCommit = CompletableFuture.supplyAsync(
+                () -> execGit(skillDir, "log", "--oneline", "-1"), skillScanExecutor);
+        CompletableFuture<String> fRemote = CompletableFuture.supplyAsync(
+                () -> execGit(skillDir, "config", "--get", "remote.origin.url"), skillScanExecutor);
+        CompletableFuture<String> fBranch = CompletableFuture.supplyAsync(
+                () -> execGit(skillDir, "rev-parse", "--abbrev-ref", "HEAD"), skillScanExecutor);
         GitInfo info = new GitInfo();
-        info.setLastCommit(execGit(skillDir, "log", "--oneline", "-1"));
-        info.setRemoteUrl(execGit(skillDir, "config", "--get", "remote.origin.url"));
-        info.setBranch(execGit(skillDir, "rev-parse", "--abbrev-ref", "HEAD"));
+        try {
+            info.setLastCommit(fCommit.get());
+            info.setRemoteUrl(fRemote.get());
+            info.setBranch(fBranch.get());
+        } catch (Exception e) {
+            log.warn("获取 git 信息失败: {} - {}", name, e.getMessage());
+        }
+        gitInfoCache.put(name, new CacheEntry<>(System.currentTimeMillis(), info));
         return info;
     }
 
@@ -171,6 +250,7 @@ public class SkillService {
                 case "disable-copy" -> Files.deleteIfExists(skillDir.resolve(".copy-enabled"));
                 default -> throw new IllegalArgumentException("不支持的操作: " + action);
             }
+            invalidateListCache();
         } catch (IOException e) {
             throw new RuntimeException("切换技能状态失败: " + name, e);
         }
@@ -203,6 +283,7 @@ public class SkillService {
         try {
             Files.createDirectories(fullPath.getParent());
             Files.writeString(fullPath, content, StandardCharsets.UTF_8);
+            invalidateListCache();
         } catch (IOException e) {
             throw new RuntimeException("写入文件失败: " + filePath, e);
         }
@@ -216,6 +297,7 @@ public class SkillService {
         Path fullPath = resolvePath(skillDir, filePath);
         try {
             Files.deleteIfExists(fullPath);
+            invalidateListCache();
         } catch (IOException e) {
             throw new RuntimeException("删除文件失败: " + filePath, e);
         }
@@ -245,6 +327,7 @@ public class SkillService {
                 deleteDirectory(skillDir);
                 throw new RuntimeException("克隆失败: " + err);
             }
+            invalidateListCache();
             return Map.of("name", skillName, "directory", skillDir.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -281,6 +364,7 @@ public class SkillService {
             }
 
             Files.deleteIfExists(tempFile);
+            invalidateListCache();
             return Map.of("name", skillName, "directory", skillDir.toString());
         } catch (IllegalArgumentException e) {
             throw e;
@@ -354,6 +438,7 @@ public class SkillService {
             } else {
                 Files.writeString(f, tag.trim(), StandardCharsets.UTF_8);
             }
+            invalidateListCache();
         } catch (IOException e) {
             throw new IllegalStateException("保存标识失败: " + e.getMessage(), e);
         }

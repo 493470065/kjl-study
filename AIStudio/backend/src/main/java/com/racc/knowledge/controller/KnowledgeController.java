@@ -51,7 +51,10 @@ public class KnowledgeController {
      */
     @PostMapping("/ml-special/sync")
     public ResponseEntity<?> syncMlSpecial() {
-        return ResponseEntity.ok(Map.of("results", mlDocsSyncService.syncAll()));
+        List<Map<String, Object>> results = mlDocsSyncService.syncAll();
+        // 入库后枚举/列/计数缓存立即失效，避免下拉还停留在旧数据
+        knowledgeService.invalidateMetadataCaches();
+        return ResponseEntity.ok(Map.of("results", results));
     }
 
     // ==================== 分页列表 ====================

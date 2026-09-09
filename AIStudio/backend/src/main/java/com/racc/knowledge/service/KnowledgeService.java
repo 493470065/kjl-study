@@ -6,6 +6,8 @@ import com.racc.knowledge.repository.KnowledgeDocumentRepository;
 import com.racc.knowledge.repository.WikiPageRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Tuple;
+import jakarta.persistence.TypedQuery;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,6 +26,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -70,16 +74,50 @@ public class KnowledgeService {
                                                          int page, int size) {
         int p = Math.max(page, 0);
         int s = Math.max(size, 1);
-        Page<KnowledgeDocumentEntity> result = repository.findByFilters(
-                blankToNull(category), blankToNull(sourceType), blankToNull(productLine),
-                blankToNull(module), blankToNull(functionPoint), blankToNull(keyword),
-                PageRequest.of(p, s));
+        category = blankToNull(category);
+        sourceType = blankToNull(sourceType);
+        productLine = blankToNull(productLine);
+        module = blankToNull(module);
+        functionPoint = blankToNull(functionPoint);
+        keyword = blankToNull(keyword);
+        // 条件动态拼接：keyword 为空时**不拼** content LIKE —— 否则优化器会强制回表读
+        // content(LONGTEXT) 逐行求值，代码扫描(2.3w 行) count 实测 12.5s。
+        Map<String, Object> params = new LinkedHashMap<>();
+        StringBuilder cond = new StringBuilder();
+        if (category != null) { cond.append(" AND d.category = :category"); params.put("category", category); }
+        if (sourceType != null) { cond.append(" AND d.sourceType = :sourceType"); params.put("sourceType", sourceType); }
+        if (productLine != null) { cond.append(" AND d.productLine = :productLine"); params.put("productLine", productLine); }
+        if (module != null) { cond.append(" AND d.module = :module"); params.put("module", module); }
+        if (functionPoint != null) { cond.append(" AND d.functionPoint = :functionPoint"); params.put("functionPoint", functionPoint); }
+        if (keyword != null) {
+            cond.append(" AND (d.title LIKE :kw OR d.content LIKE :kw OR d.module LIKE :kw"
+                      + " OR d.functionPoint LIKE :kw OR d.tags LIKE :kw)");
+            params.put("kw", "%" + keyword + "%");
+        }
+        String where = cond.length() == 0 ? "" : " WHERE " + cond.substring(5);
 
-        List<Map<String, Object>> content = result.getContent().stream()
-                .map(this::toDocumentMap)
+        TypedQuery<Long> countQuery = entityManager.createQuery(
+                "SELECT COUNT(d) FROM KnowledgeDocumentEntity d" + where, Long.class);
+        params.forEach(countQuery::setParameter);
+        long total = countQuery.getSingleResult();
+
+        // 列表不取 content / embedding（LONGTEXT）：列表页只展示元信息，正文由 /{id} 详情接口按需取
+        TypedQuery<Tuple> listQuery = entityManager.createQuery(
+                "SELECT d.id AS id, d.title AS title, d.contentPreview AS contentPreview, "
+              + "d.category AS category, d.tags AS tags, d.sourceType AS sourceType, "
+              + "d.fileName AS fileName, d.productLine AS productLine, d.module AS module, "
+              + "d.functionPoint AS functionPoint, d.sourceUrl AS sourceUrl, "
+              + "d.extraFields AS extraFields, d.createdAt AS createdAt, d.updatedAt AS updatedAt "
+              + "FROM KnowledgeDocumentEntity d" + where + " ORDER BY d.updatedAt DESC", Tuple.class);
+        params.forEach(listQuery::setParameter);
+        List<Tuple> rows = listQuery.setFirstResult(p * s).setMaxResults(s).getResultList();
+
+        List<Map<String, Object>> content = rows.stream()
+                .map(this::toSummaryMap)
                 .collect(Collectors.toList());
 
-        return new PageResult<>(content, result.getTotalElements(), result.getTotalPages(), result.getNumber());
+        int totalPages = (int) Math.ceil((double) total / s);
+        return new PageResult<>(content, total, totalPages, p);
     }
 
     // ==================== 详情 ====================
@@ -115,6 +153,7 @@ public class KnowledgeService {
         entity = repository.save(entity);
         // 同步 FTS 索引
         rebuildFtsFor(entity.getId());
+        invalidateMetadataCaches();
         return toDocumentMap(entity);
     }
 
@@ -166,6 +205,7 @@ public class KnowledgeService {
 
             entity = repository.save(entity);
             rebuildFtsFor(entity.getId());
+            invalidateMetadataCaches();
             return toDocumentMap(entity);
 
         } catch (IOException e) {
@@ -217,6 +257,7 @@ public class KnowledgeService {
 
         entity = repository.save(entity);
         rebuildFtsFor(entity.getId());
+        invalidateMetadataCaches();
         return toDocumentMap(entity);
     }
 
@@ -227,6 +268,7 @@ public class KnowledgeService {
             throw new NoSuchElementException("文档不存在: " + id);
         }
         repository.deleteById(id);
+        invalidateMetadataCaches();
     }
 
     // ==================== 搜索 ====================
@@ -373,19 +415,47 @@ public class KnowledgeService {
 
     // ==================== 枚举列表 ====================
 
+    /** 枚举下拉缓存（60s TTL）：切 Tab / 反复筛选时避免重复扫表；写操作后主动失效 */
+    private static final long ENUM_CACHE_TTL_MS = 60_000L;
+    private static final class EnumCacheEntry {
+        final long at; final Object value;
+        EnumCacheEntry(long at, Object value) { this.at = at; this.value = value; }
+    }
+    private final Map<String, EnumCacheEntry> enumCache = new ConcurrentHashMap<>();
+
+    @SuppressWarnings("unchecked")
+    private <T> T cachedEnum(String key, Supplier<T> loader) {
+        EnumCacheEntry e = enumCache.get(key);
+        if (e != null && System.currentTimeMillis() - e.at < ENUM_CACHE_TTL_MS) {
+            return (T) e.value;
+        }
+        T value = loader.get();
+        enumCache.put(key, new EnumCacheEntry(System.currentTimeMillis(), value));
+        return value;
+    }
+
+    /** 文档增删改后调用：清空枚举 / 列描述 / 计数缓存，保证下拉与统计及时反映新数据 */
+    public void invalidateMetadataCaches() {
+        enumCache.clear();
+        columnsCache = null;
+        docCountCache = null;
+    }
+
     @Transactional(readOnly = true)
     public List<String> listCategories(String sourceType) {
-        return repository.findDistinctCategories(blankToNull(sourceType));
+        return cachedEnum("cat:" + sourceType,
+                () -> repository.findDistinctCategories(blankToNull(sourceType)));
     }
 
     @Transactional(readOnly = true)
     public List<String> listSourceTypes() {
-        return repository.findDistinctSourceTypes();
+        return cachedEnum("st", repository::findDistinctSourceTypes);
     }
 
     @Transactional(readOnly = true)
     public List<Map<String, String>> listProductLines(String sourceType) {
-        List<String> names = repository.findDistinctProductLines(blankToNull(sourceType));
+        List<String> names = cachedEnum("pl:" + sourceType,
+                () -> repository.findDistinctProductLines(blankToNull(sourceType)));
         return names.stream().map(name -> {
             Map<String, String> item = new LinkedHashMap<>();
             item.put("name", name);
@@ -397,15 +467,17 @@ public class KnowledgeService {
 
     @Transactional(readOnly = true)
     public List<String> listModules(String sourceType) {
-        return repository.findDistinctModules(blankToNull(sourceType));
+        return cachedEnum("mod:" + sourceType,
+                () -> repository.findDistinctModules(blankToNull(sourceType)));
     }
 
     @Transactional(readOnly = true)
     public List<String> listFunctionPoints(String sourceType) {
-        return repository.findDistinctFunctionPoints(blankToNull(sourceType));
+        return cachedEnum("fp:" + sourceType,
+                () -> repository.findDistinctFunctionPoints(blankToNull(sourceType)));
     }
 
-    /** 列扫描结果缓存（60s TTL）：该接口需全表扫描，切 Tab 反复调用时避免重复扫 */
+    /** 列扫描结果缓存（10min TTL）：该接口需全表投影扫描（约 4~5s），写操作后由 invalidateMetadataCaches 主动失效 */
     private volatile Map<String, Object> columnsCache;
     private volatile long columnsCacheAt;
 
@@ -418,7 +490,7 @@ public class KnowledgeService {
     @SuppressWarnings("unchecked")
     public Map<String, Object> listColumns() {
         Map<String, Object> cached = columnsCache;
-        if (cached != null && System.currentTimeMillis() - columnsCacheAt < 60_000L) {
+        if (cached != null && System.currentTimeMillis() - columnsCacheAt < 600_000L) {
             return cached;
         }
         LinkedHashSet<String> dynamic = new LinkedHashSet<>();
@@ -483,11 +555,53 @@ public class KnowledgeService {
             if (t.isEmpty()) continue;
             for (String sub : t.split("[-_/\\\\.]+")) {
                 if (sub.isEmpty()) continue;
-                if (sb.length() > 0) sb.append(" ");
-                sb.append(sub);
+                appendFtsToken(sb, sub);
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * 追加单个检索词到布尔表达式。ngram 分词器把整段 CJK 长词（如"会诊申请流程"）按短语匹配，
+     * 实测极易 0 召回（随后触发 LIKE 全表扫描，单词可达 ~19s）。故将连续 CJK 段拆成相邻
+     * 2-gram（如"会诊 诊申 申请 请流 流程"）做 OR 召回：实测毫秒级且召回更全。
+     * 纯 ASCII 段/单字 CJK 保持原样，避免改变标识符类检索语义。
+     */
+    private void appendFtsToken(StringBuilder sb, String token) {
+        if (token == null || token.isEmpty()) return;
+        if (token.length() >= 2 && containsCjk(token)) {
+            int i = 0;
+            while (i < token.length()) {
+                boolean cjkSeg = isCjkChar(token.charAt(i));
+                int j = i;
+                while (j < token.length() && isCjkChar(token.charAt(j)) == cjkSeg) j++;
+                String seg = token.substring(i, j);
+                if (cjkSeg) {
+                    if (seg.length() >= 2) {
+                        for (int k = 0; k + 2 <= seg.length(); k++) {
+                            appendFtsTerm(sb, seg.substring(k, k + 2));
+                        }
+                    } else {
+                        appendFtsTerm(sb, seg); // 单字 CJK：ngram 无索引，保留原样（与旧行为一致）
+                    }
+                } else {
+                    appendFtsTerm(sb, seg);
+                }
+                i = j;
+            }
+        } else {
+            appendFtsTerm(sb, token);
+        }
+    }
+
+    private void appendFtsTerm(StringBuilder sb, String term) {
+        if (sb.length() > 0) sb.append(" ");
+        sb.append(term);
+    }
+
+    private boolean isCjkChar(char c) {
+        return (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF)
+            || (c >= 0x3040 && c <= 0x30FF) || (c >= 0xAC00 && c <= 0xD7AF);
     }
 
     /**
@@ -510,11 +624,7 @@ public class KnowledgeService {
     private boolean containsCjk(String s) {
         if (s == null) return false;
         for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF)
-                || (c >= 0x3040 && c <= 0x30FF) || (c >= 0xAC00 && c <= 0xD7AF)) {
-                return true;
-            }
+            if (isCjkChar(s.charAt(i))) return true;
         }
         return false;
     }
@@ -713,17 +823,49 @@ public class KnowledgeService {
         map.put("createdAt", entity.getCreatedAt() != null ? entity.getCreatedAt().toString() : null);
         map.put("updatedAt", entity.getUpdatedAt() != null ? entity.getUpdatedAt().toString() : null);
         // 摊平动态字段，便于前端按字段自动生成列
-        if (entity.getExtraFields() != null && !entity.getExtraFields().isBlank()) {
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> extra = OBJECT_MAPPER.readValue(entity.getExtraFields(), Map.class);
-                for (Map.Entry<String, Object> e : extra.entrySet()) {
-                    map.put("field_" + e.getKey(), e.getValue());
-                }
-            } catch (Exception ignored) {
-                // 非法 JSON 忽略
-            }
-        }
+        flattenExtraFields(map, entity.getExtraFields());
         return map;
+    }
+
+    /**
+     * 列表专用：与 toDocumentMap 字段一致，但**不含 content**（LONGTEXT）。
+     * 列表页 20 行原本要传 0.3~11.7MB，去掉正文后仅数 KB。
+     * 详情 / 编辑走 /{id} 接口单独取正文，不受影响。
+     */
+    private Map<String, Object> toSummaryMap(Tuple row) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", row.get("id"));
+        map.put("title", row.get("title"));
+        map.put("content", null); // 列表不返回正文，按需由详情接口获取
+        map.put("contentPreview", row.get("contentPreview"));
+        map.put("category", row.get("category"));
+        map.put("tags", row.get("tags"));
+        map.put("sourceType", row.get("sourceType"));
+        map.put("fileName", row.get("fileName"));
+        map.put("productLine", row.get("productLine"));
+        map.put("module", row.get("module"));
+        map.put("functionPoint", row.get("functionPoint"));
+        map.put("sourceUrl", row.get("sourceUrl"));
+        map.put("extraFields", row.get("extraFields"));
+        Object createdAt = row.get("createdAt");
+        Object updatedAt = row.get("updatedAt");
+        map.put("createdAt", createdAt != null ? createdAt.toString() : null);
+        map.put("updatedAt", updatedAt != null ? updatedAt.toString() : null);
+        flattenExtraFields(map, (String) row.get("extraFields"));
+        return map;
+    }
+
+    /** 摊平 extraFields 动态字段为 field_xxx 顶层键（列表与详情共用） */
+    @SuppressWarnings("unchecked")
+    private void flattenExtraFields(Map<String, Object> map, String extraFields) {
+        if (extraFields == null || extraFields.isBlank()) return;
+        try {
+            Map<String, Object> extra = OBJECT_MAPPER.readValue(extraFields, Map.class);
+            for (Map.Entry<String, Object> e : extra.entrySet()) {
+                map.put("field_" + e.getKey(), e.getValue());
+            }
+        } catch (Exception ignored) {
+            // 非法 JSON 忽略
+        }
     }
 }

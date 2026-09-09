@@ -52,8 +52,37 @@ public class KnowledgeDatabaseInitializer implements CommandLineRunner {
             } else {
                 log.info("知识库 FULLTEXT 全文索引已存在，跳过创建");
             }
+
+            // 列表分页 / 枚举下拉的覆盖索引。缺了这些索引，2.4w 行带 LONGTEXT 的表会全表扫描
+            // （实测列表 36s、count 12.5s），加上后均为亚秒级。
+            ensureIndex(st, "idx_kd_source_updated",
+                    "ALTER TABLE knowledge_documents ADD INDEX idx_kd_source_updated (source_type, updated_at DESC)");
+            ensureIndex(st, "idx_kd_source_category",
+                    "ALTER TABLE knowledge_documents ADD INDEX idx_kd_source_category (source_type, category)");
+            ensureIndex(st, "idx_kd_source_module",
+                    "ALTER TABLE knowledge_documents ADD INDEX idx_kd_source_module (source_type, module)");
+            ensureIndex(st, "idx_kd_source_fp",
+                    "ALTER TABLE knowledge_documents ADD INDEX idx_kd_source_fp (source_type, function_point)");
+            ensureIndex(st, "idx_kd_source_pl",
+                    "ALTER TABLE knowledge_documents ADD INDEX idx_kd_source_pl (source_type, product_line)");
         } catch (Exception e) {
-            log.warn("知识库全文索引初始化失败（检索将降级为 LIKE 模糊匹配）：{}", e.getMessage());
+            log.warn("知识库索引初始化失败（检索将降级为 LIKE 模糊匹配）：{}", e.getMessage());
+        }
+    }
+
+    /** 索引不存在则创建（幂等） */
+    private void ensureIndex(Statement st, String indexName, String ddl) throws Exception {
+        try (ResultSet rs = st.executeQuery(
+                "SELECT COUNT(*) FROM information_schema.statistics "
+              + "WHERE table_schema = DATABASE() AND table_name = 'knowledge_documents' "
+              + "AND index_name = '" + indexName + "'")) {
+            if (rs.next() && rs.getInt(1) > 0) return;
+        }
+        try {
+            st.execute(ddl);
+            log.info("知识库索引 {} 创建完成", indexName);
+        } catch (Exception e) {
+            log.warn("知识库索引 {} 创建失败：{}", indexName, e.getMessage());
         }
     }
 }

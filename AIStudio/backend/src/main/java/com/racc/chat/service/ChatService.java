@@ -9,6 +9,7 @@ import com.racc.knowledge.service.KnowledgeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -62,6 +63,12 @@ public class ChatService {
 
     /**
      * SSE 流式聊天。
+     *
+     * 修复历史：旧实现先 chatModel.call() 阻塞等整段回答生成完才输出，SSE 首包 ≈ 完整生成耗时，
+     * 远超前端 60s 首包看门狗 → "响应超时"。现改为：
+     * 1. 请求开头立即发 status 事件，保证首包秒回；
+     * 2. chatModel.stream() 逐 token 转发 content 事件，首包 ≈ 首个 token；
+     * 3. 知识库检索/LLM 任一步失败时保留 mock 兜底，不中断会话。
      */
     public SseEmitter streamChat(String message, String projectId, String conversationId, String username, String agentName) {
         // timeout 5 分钟
@@ -75,30 +82,66 @@ public class ChatService {
                 // 2. 保存用户消息
                 saveMessage(convId, "user", message, null);
 
-                // 3. 生成回复（模拟或真实）
-                String reply = generateReply(convId, message, agentName);
+                // 3. LLM 未启用 → 模拟回复（一次性输出，与旧行为一致）
+                if (!llmEnabled || chatModel == null) {
+                    String mock = mockReply(message);
+                    sendEvent(emitter, Map.of("type", "content", "content", mock));
+                    finishSuccess(emitter, convId, mock, message);
+                    return;
+                }
 
-                // 4. 发送 SSE 事件（data 负载只放 JSON 本身，"data:" 前缀由 SseEmitter 自动添加，
-                //    切勿再手动拼接，否则前端收到 "data:data:{...}" 双重前缀会解析失败）
-                // content 块
-                emitter.send(SseEmitter.event()
-                        .name("message")
-                        .data(toJson(Map.of("type", "content", "content", reply))));
+                // 4. 立即发送"已收到"事件：首包秒回，避免前端 60s 首包超时误杀
+                sendEvent(emitter, Map.of("type", "status", "content", "已收到，正在检索知识库…"));
 
-                // done 块
-                emitter.send(SseEmitter.event()
-                        .name("message")
-                        .data(toJson(Map.of("type", "done", "conversationId", convId))));
+                // 5. 组装提示（含 RAG 检索），与 /message 共用同一逻辑
+                PromptCtx ctx;
+                try {
+                    ctx = buildPromptCtx(convId, message, agentName);
+                } catch (Exception ragEx) {
+                    // 检索失败不阻断对话：mock 兜底 + 失败说明（与旧 generateReply 兜底一致）
+                    String fallback = mockReply(message) + "\n\n[知识库检索失败：" + ragEx.getMessage() + "]";
+                    sendEvent(emitter, Map.of("type", "content", "content", fallback));
+                    finishSuccess(emitter, convId, fallback, message);
+                    return;
+                }
 
-                // 5. 保存助手消息
-                saveMessage(convId, "assistant", reply, null);
+                sendEvent(emitter, Map.of("type", "status", "content", "正在生成回答…"));
 
-                // 6. 更新会话标题
-                updateConversationTitle(convId, message);
+                // 6. 真·流式：逐 token 转发 SSE content 事件
+                StringBuilder full = new StringBuilder();
+                try {
+                    for (ChatResponse resp : chatModel.stream(new Prompt(ctx.messages())).toIterable()) {
+                        String delta = (resp.getResult() != null && resp.getResult().getOutput() != null)
+                                ? resp.getResult().getOutput().getText() : null;
+                        if (delta == null || delta.isEmpty()) continue;
+                        full.append(delta);
+                        sendEvent(emitter, Map.of("type", "content", "content", delta));
+                    }
+                } catch (Exception llmEx) {
+                    if (full.length() == 0) {
+                        // 未吐出任何字：mock 兜底 + 失败标注（与旧行为一致）
+                        String fallback = mockReply(message) + "\n\n[LLM 调用失败：" + llmEx.getMessage() + "]";
+                        sendEvent(emitter, Map.of("type", "content", "content", fallback));
+                        finishSuccess(emitter, convId, fallback, message);
+                    } else {
+                        // 已输出部分内容后失败：如实上报错误，不把残缺回答当成功落库
+                        try {
+                            emitter.send(SseEmitter.event().name("message")
+                                    .data("[ERROR]回答中途中断：" + llmEx.getMessage()));
+                        } catch (IOException ignored) {}
+                        emitter.complete();
+                    }
+                    return;
+                }
 
-                // 7. 发送完成信号
-                emitter.send(SseEmitter.event().name("message").data("[DONE]"));
-                emitter.complete();
+                // 7. 未命中知识库时追加提示（与 /message 一致）
+                String reply = full.toString();
+                if (!ctx.kbHit()) {
+                    reply = reply + "\n\n（提示：知识库未检索到与您问题直接相关的内容，以上为通用回答，仅供参考。）";
+                }
+
+                // 8. 正常收尾：done → 落库 → [DONE]
+                finishSuccess(emitter, convId, reply, message);
 
             } catch (Exception e) {
                 try {
@@ -111,6 +154,21 @@ public class ChatService {
         });
 
         return emitter;
+    }
+
+    /** 发送一条 SSE JSON 事件（"data:" 前缀由 SseEmitter 自动添加，payload 只放 JSON 本身） */
+    private void sendEvent(SseEmitter emitter, Map<String, Object> payload) throws IOException {
+        emitter.send(SseEmitter.event().name("message").data(toJson(payload)));
+    }
+
+    /** 正常收尾：done → 保存助手消息/更新标题 → [DONE] → complete */
+    private void finishSuccess(SseEmitter emitter, String convId, String reply, String userMessage) throws Exception {
+        emitter.send(SseEmitter.event().name("message")
+                .data(toJson(Map.of("type", "done", "conversationId", convId))));
+        saveMessage(convId, "assistant", reply, null);
+        updateConversationTitle(convId, userMessage);
+        emitter.send(SseEmitter.event().name("message").data("[DONE]"));
+        emitter.complete();
     }
 
     /**
@@ -242,55 +300,14 @@ public class ChatService {
             return mockReply(message);
         }
         try {
-            // 0. 若指定了 Agent，读取其 systemPrompt 作为人设指令
-            String agentPrompt = loadAgentSystemPrompt(agentName);
-
-            // 1. 先检索知识库（全库 Top5，关键词+FTS5，自动降级 LIKE）
-            List<Map<String, Object>> kbHits = retrieveFromKnowledgeBase(message);
-
-            // 2. 组装对话历史
-            List<Message> messages = new ArrayList<>();
-            if (agentPrompt != null) {
-                messages.add(new SystemMessage(agentPrompt));
-            }
-            List<ChatMessageEntity> history = messageRepo.findByConversationIdOrderByCreatedAtAsc(conversationId);
-            for (ChatMessageEntity m : history) {
-                if ("user".equals(m.getRole())) {
-                    messages.add(new UserMessage(m.getContent()));
-                } else if ("assistant".equals(m.getRole())) {
-                    messages.add(new AssistantMessage(m.getContent()));
-                }
-            }
-            if (messages.isEmpty()) {
-                messages.add(new UserMessage(message));
-            }
-
-            // 3. 若有知识库命中，在系统层注入参考上下文 + 回答约束
-            if (kbHits != null && !kbHits.isEmpty()) {
-                String kbContext = buildKnowledgeContext(kbHits);
-                boolean technical = isTechnicalQuery(message);
-                String styleGuide = technical
-                        ? "用户问题偏技术/代码向：可依据参考中的【代码】内容给出接口、类、方法等技术细节，" +
-                          "必要时可输出简洁的代码片段或签名；同时结合【文书Spec】【SOP】说明业务背景。"
-                        : "用户问题偏业务/流程向：优先依据参考中的【文书Spec】【SOP】，用通俗易懂的业务语言" +
-                          "描述流程、规则与概念；不要输出代码片段、Java类名、接口签名、文件路径等技术细节，" +
-                          "也不要照搬目录结构或表格样式堆砌。即使参考里混有【代码】条目，也应忽略其技术细节。";
-                String sysInstruction = "你是病历片区知识库助手。知识库包含三类资料：【文书Spec】（业务规格）、" +
-                        "【SOP】（标准操作流程）、【代码】（系统源码摘录）。请严格基于下方【知识库参考】中的内容回答用户问题，" +
-                        "并优先选用与问题性质匹配的参考类型。若参考内容不足以回答，可结合你的通用知识补充，但必须明确区分。" +
-                        "回答末尾用「参考文档：」列出你实际引用了的文档标题（仅列相关项）。\n" +
-                        styleGuide + "\n\n【知识库参考】\n" + kbContext;
-                // 知识库指令置于最前；若已有 Agent 人设，则保持人设在第 0 位、知识库紧随其后
-                messages.add(agentPrompt != null ? 1 : 0, new SystemMessage(sysInstruction));
-            }
-
-            Prompt prompt = new Prompt(messages);
-            String content = chatModel.call(prompt).getResult().getOutput().getText();
+            // 与 streamChat 共用 buildPromptCtx（Agent 人设 + RAG + 历史），避免提示逻辑漂移
+            PromptCtx ctx = buildPromptCtx(conversationId, message, agentName);
+            String content = chatModel.call(new Prompt(ctx.messages())).getResult().getOutput().getText();
             if (content == null || content.isBlank()) {
                 return mockReply(message);
             }
-            // 4. 未命中时追加提示
-            if (kbHits == null || kbHits.isEmpty()) {
+            // 未命中时追加提示
+            if (!ctx.kbHit()) {
                 return content.trim() + "\n\n（提示：知识库未检索到与您问题直接相关的内容，以上为通用回答，仅供参考。）";
             }
             return content.trim();
@@ -298,6 +315,60 @@ public class ChatService {
             // 调用失败降级为模拟回复，保证对话不中断
             return mockReply(message) + "\n\n[LLM 调用失败：" + e.getMessage() + "]";
         }
+    }
+
+    /** 组装 LLM 提示所需上下文（KB 是否命中用于回答末尾提示） */
+    private record PromptCtx(List<Message> messages, boolean kbHit) {}
+
+    /**
+     * 组装 LLM 提示：可选 Agent 人设 + 对话历史 + 知识库 RAG 参考。
+     * stream（真流式）与 /message（非流式）共用，确保两条路径提示一致。
+     * 必须在事务之外调用（sendMessage/streamChat 已保证调用点不在写事务中）。
+     */
+    private PromptCtx buildPromptCtx(String conversationId, String message, String agentName) {
+        // 0. 若指定了 Agent，读取其 systemPrompt 作为人设指令
+        String agentPrompt = loadAgentSystemPrompt(agentName);
+
+        // 1. 组装对话历史（含刚保存的当前用户消息）
+        List<Message> messages = new ArrayList<>();
+        if (agentPrompt != null) {
+            messages.add(new SystemMessage(agentPrompt));
+        }
+        List<ChatMessageEntity> history = messageRepo.findByConversationIdOrderByCreatedAtAsc(conversationId);
+        for (ChatMessageEntity m : history) {
+            if ("user".equals(m.getRole())) {
+                messages.add(new UserMessage(m.getContent()));
+            } else if ("assistant".equals(m.getRole())) {
+                messages.add(new AssistantMessage(m.getContent()));
+            }
+        }
+        if (messages.isEmpty()) {
+            messages.add(new UserMessage(message));
+        }
+
+        // 2. 先检索知识库（全库 Top5，关键词+FTS5，自动降级 LIKE）
+        List<Map<String, Object>> kbHits = retrieveFromKnowledgeBase(message);
+
+        // 3. 若有知识库命中，在系统层注入参考上下文 + 回答约束
+        if (kbHits != null && !kbHits.isEmpty()) {
+            String kbContext = buildKnowledgeContext(kbHits);
+            boolean technical = isTechnicalQuery(message);
+            String styleGuide = technical
+                    ? "用户问题偏技术/代码向：可依据参考中的【代码】内容给出接口、类、方法等技术细节，" +
+                      "必要时可输出简洁的代码片段或签名；同时结合【文书Spec】【SOP】说明业务背景。"
+                    : "用户问题偏业务/流程向：优先依据参考中的【文书Spec】【SOP】，用通俗易懂的业务语言" +
+                      "描述流程、规则与概念；不要输出代码片段、Java类名、接口签名、文件路径等技术细节，" +
+                      "也不要照搬目录结构或表格样式堆砌。即使参考里混有【代码】条目，也应忽略其技术细节。";
+            String sysInstruction = "你是病历片区知识库助手。知识库包含三类资料：【文书Spec】（业务规格）、" +
+                    "【SOP】（标准操作流程）、【代码】（系统源码摘录）。请严格基于下方【知识库参考】中的内容回答用户问题，" +
+                    "并优先选用与问题性质匹配的参考类型。若参考内容不足以回答，可结合你的通用知识补充，但必须明确区分。" +
+                    "回答末尾用「参考文档：」列出你实际引用了的文档标题（仅列相关项）。\n" +
+                    styleGuide + "\n\n【知识库参考】\n" + kbContext;
+            // 知识库指令置于最前；若已有 Agent 人设，则保持人设在第 0 位、知识库紧随其后
+            messages.add(agentPrompt != null ? 1 : 0, new SystemMessage(sysInstruction));
+            return new PromptCtx(messages, true);
+        }
+        return new PromptCtx(messages, false);
     }
 
     /**
@@ -366,9 +437,12 @@ public class ChatService {
         // 代码类命中的预览默认是文件头部（import 语句），信息量低；
         // 回取全文并截取关键词附近窗口，让技术回答能引用到有意义的代码片段
         List<String> kws = extractKeywords(query);
+        // 代码类命中回取全文开销大（content 为 LONGTEXT，单文档最大数 MB），只增强前 2 条
+        int enriched = 0;
         for (Map<String, Object> hit : top) {
-            if ("scan".equals(hit.get("sourceType"))) {
+            if ("scan".equals(hit.get("sourceType")) && enriched < 2) {
                 enrichCodeSnippet(hit, kws);
+                enriched++;
             }
         }
         return top;

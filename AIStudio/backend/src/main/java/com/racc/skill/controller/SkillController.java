@@ -51,10 +51,14 @@ public class SkillController {
 
     // ==================== 列表 & 详情 ====================
 
-    /** GET /api/skills — 技能列表 */
+    /**
+     * GET /api/skills — 技能列表
+     * @param force true 时忽略后端缓存强制重算（前端「刷新」按钮用；默认走 60s 缓存）
+     */
     @GetMapping
-    public ResponseEntity<List<SkillSummary>> listSkills() {
-        return ResponseEntity.ok(skillService.listSkills());
+    public ResponseEntity<List<SkillSummary>> listSkills(
+            @RequestParam(defaultValue = "false") boolean force) {
+        return ResponseEntity.ok(skillService.listSkills(force));
     }
 
     // ==================== 分类标识（人工维护） ====================

@@ -744,8 +744,12 @@ interface KvSnapshot {
   categories: string[]
   modules: string[]
   functionPoints: string[]
+  /** 快照抓取时间：用于判断是否需要后台静默刷新（SWR） */
+  fetchedAt: number
 }
 const kvSnapshots: Record<string, KvSnapshot> = {}
+/** 快照有效期：超过则切回该 Tab 时后台静默刷新一次（不显示 loading，用户无感） */
+const SNAPSHOT_TTL_MS = 5 * 60 * 1000
 let kvAux: {
   productLines: { name: string; displayName: string }[]
   columnsDescriptor: { columns: string[]; tags: string[]; hasModule: boolean; hasFunctionPoint: boolean; hasSourceUrl: boolean }
@@ -1104,8 +1108,11 @@ function highlightSnippet(content: string): string {
 
 // ---- Data fetching ----
 
-async function fetchDocuments() {
-  listLoading.value = true
+/**
+ * @param silent 静默刷新：不显示加载态（SWR 后台刷新用），失败也不弹错
+ */
+async function fetchDocuments(opts: { silent?: boolean } = {}) {
+  if (!opts.silent) listLoading.value = true
   try {
     const result = await knowledgeApi.listDocuments(
       selectedCategory.value || undefined,
@@ -1119,19 +1126,29 @@ async function fetchDocuments() {
     )
     documents.value = result.content
     totalElements.value = result.totalElements
-    fetchProductLines()
-    fetchColumns()
+    // 辅助数据（产品线 / 动态列）仅在首次加载时拉取，翻页、筛选不再重复请求
+    if (!kvAux) {
+      fetchProductLines()
+      fetchColumns()
+    }
     saveSnapshot()
   } catch (err: any) {
-    ElMessage.error('获取文档列表失败: ' + (err.message || '未知错误'))
+    if (!opts.silent) ElMessage.error('获取文档列表失败: ' + (err.message || '未知错误'))
   } finally {
-    listLoading.value = false
+    if (!opts.silent) listLoading.value = false
   }
+}
+
+/** 视图 → sourceType 的统一映射（快照键、预取键都用它，避免 ml/ml-special 不一致） */
+function sourceTypeOfTab(tab: string): string {
+  if (tab === 'documents') return 'upload'
+  if (tab === 'ml') return 'ml-special'
+  return tab // scan / sop
 }
 
 /** 当前视图的缓存键（与 sourceType 对应） */
 function snapshotKey(): string {
-  return currentSourceType.value || 'upload'
+  return sourceTypeOfTab(activeTab.value)
 }
 
 /** 成功拉取后保存快照：重进页面 / 切换视图时直接展示，不再自动请求 */
@@ -1148,7 +1165,8 @@ function saveSnapshot() {
     selectedTag: selectedTag.value,
     categories: categories.value,
     modules: modules.value,
-    functionPoints: functionPoints.value
+    functionPoints: functionPoints.value,
+    fetchedAt: Date.now()
   }
   kvAux = {
     productLines: productLines.value,
@@ -1185,9 +1203,55 @@ function restoreSnapshot(key: string): boolean {
   return true
 }
 
-/** 人工手动刷新：重新拉取当前视图列表与辅助数据 */
+/**
+ * 后台预热指定视图：只写快照、不触碰当前 UI 状态，供切换 Tab 时秒开。
+ * 已存在快照或正在拉取时跳过。
+ */
+const prefetching = new Set<string>()
+async function prefetchTab(sourceType: string) {
+  if (kvSnapshots[sourceType] || prefetching.has(sourceType)) return
+  prefetching.add(sourceType)
+  try {
+    const [docs, cats, mods, fps] = await Promise.all([
+      knowledgeApi.listDocuments(undefined, sourceType, undefined, undefined, undefined, undefined, 0, 20),
+      knowledgeApi.listCategories(sourceType).catch(() => [] as string[]),
+      knowledgeApi.listModules(sourceType).catch(() => [] as string[]),
+      knowledgeApi.listFunctionPoints(sourceType).catch(() => [] as string[])
+    ])
+    kvSnapshots[sourceType] = {
+      documents: docs.content,
+      totalElements: docs.totalElements,
+      currentPage: 1,
+      pageSize: 20,
+      selectedCategory: '',
+      selectedProductLine: '',
+      filterModule: '',
+      filterFunctionPoint: '',
+      selectedTag: '',
+      categories: cats,
+      modules: mods,
+      functionPoints: fps,
+      fetchedAt: Date.now()
+    }
+  } catch {
+    /* 预热失败不影响使用：切到该 Tab 时会正常拉取 */
+  } finally {
+    prefetching.delete(sourceType)
+  }
+}
+
+/** 进入页面后串行预热其余视图（串行避免并发打满 MySQL 连接池） */
+async function warmupOtherTabs() {
+  const current = currentSourceType.value || 'upload'
+  const others = ['upload', 'scan', 'sop', 'ml-special'].filter(k => k !== current && !kvSnapshots[k])
+  for (const k of others) {
+    await prefetchTab(k)
+  }
+}
+
+/** 人工手动刷新：重新拉取当前视图列表与辅助数据（强制，忽略快照） */
 async function handleManualRefresh() {
-  await Promise.all([fetchDocuments(), fetchCategories(), fetchModules(), fetchFunctionPoints()])
+  await Promise.all([fetchDocuments(), fetchCategories(), fetchModules(), fetchFunctionPoints(), fetchColumns(), fetchProductLines()])
   ElMessage.success('已刷新')
 }
 
@@ -1866,16 +1930,25 @@ watch(activeTab, (newTab, oldTab) => {
     currentPage.value = 1
   }
 
-  // Load tab-specific data：优先展示上次数据（缓存），该视图从未加载过才真实拉取
+  // 切换视图：有快照先秒显（不进 loading）；快照超过 TTL 才后台静默刷新一次
   if (newTab === 'documents' || newTab === 'scan' || newTab === 'sop' || newTab === 'ml') {
-    const key = newTab === 'documents' ? 'upload' : newTab
-    if (!restoreSnapshot(key)) {
+    // 注意：快照键一律用 sourceType（多语专项是 ml-special，不是 ml），否则多语 Tab 每次都命中不了缓存
+    const key = sourceTypeOfTab(newTab)
+    if (restoreSnapshot(key)) {
+      const snap = kvSnapshots[key]
+      if (snap && Date.now() - (snap.fetchedAt || 0) > SNAPSHOT_TTL_MS) {
+        fetchDocuments({ silent: true })
+        fetchCategories()
+      }
+    } else {
       fetchDocuments()
       fetchCategories()
       fetchModules()
       fetchFunctionPoints()
       fetchColumns()
     }
+    // 未预热的视图顺手补一次（如首次切到某 Tab 时预热尚未完成）
+    prefetchTab(key)
     // 多语专项视图：列表为空且本会话未自动同步过 → 自动触发一次资料入库
     if (newTab === 'ml' && !mlAutoSyncTried.value) {
       mlAutoSyncTried.value = true
@@ -1893,13 +1966,17 @@ watch(activeTab, (newTab, oldTab) => {
 
 onMounted(() => {
   // 有缓存直接展示上次数据（不重新加载）；首次进入才拉取。数据更新由工具栏「刷新」人工触发。
-  if (restoreSnapshot(snapshotKey())) return
-  fetchDocuments()
-  fetchCategories()
-  fetchProductLines()
-  fetchModules()
-  fetchFunctionPoints()
-  fetchColumns()
+  const restored = restoreSnapshot(snapshotKey())
+  if (!restored) {
+    fetchDocuments()
+    fetchCategories()
+    fetchProductLines()
+    fetchModules()
+    fetchFunctionPoints()
+    fetchColumns()
+  }
+  // 首屏完成后后台串行预热其余视图，切换时即可秒开（不影响当前页面渲染）
+  setTimeout(() => { warmupOtherTabs() }, restored ? 300 : 1500)
 })
 </script>
 

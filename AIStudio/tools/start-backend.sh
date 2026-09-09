@@ -26,7 +26,10 @@ if [ "$1" = "--build" ]; then
     exit 1
   fi
   echo "[start] 构建 jar ..."
-  CWJAR=$(ls "$ROOT/tools/apache-maven-3.9.16/boot/"plexus-classworlds-*.jar | head -1 | sed 's|^/f/|F:/|')
+  # 注意：java 是 Windows 程序，-classpath 必须给 Windows 路径（F:/...）。
+  # 早期用 sed 's|^/f/|F:/|' 转换，但 ls 在 cwd=$ROOT 下输出的是相对路径，匹配不上 →
+  # 报 ClassNotFoundException: org.codehaus.plexus.classworlds.launcher.Launcher。改用 cygpath 转换。
+  CWJAR=$(cygpath -w "$(ls "$ROOT/tools/apache-maven-3.9.16/boot/"plexus-classworlds-*.jar | head -1)")
   ( cd "$ROOT/backend" && "$JAVA_HOME/bin/java.exe" -classpath "$CWJAR" \
     "-Dclassworlds.conf=F:/kjl-study/AIStudio/tools/apache-maven-3.9.16/bin/m2.conf" \
     "-Dmaven.home=F:/kjl-study/AIStudio/tools/apache-maven-3.9.16" \
