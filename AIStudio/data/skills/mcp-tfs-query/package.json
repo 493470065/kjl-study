@@ -1,0 +1,21 @@
+{
+  "name": "mcp-tfs-query",
+  "version": "1.0.0",
+  "description": "TFS 2018 MCP Server for 卫宁健康 WINNING-6.0",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "mcp-tfs-query": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": ["mcp", "tfs", "azure-devops"],
+  "author": "卫宁健康 WINNING-6.0 团队",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "azure-devops-node-api": "^12.5.0"
+  }
+}
