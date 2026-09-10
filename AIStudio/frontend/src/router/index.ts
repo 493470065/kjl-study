@@ -56,6 +56,12 @@ const router = createRouter({
       meta: { title: "多语专项" }
     },
     {
+      path: "/i18n-translate",
+      name: "i18nTranslate",
+      component: () => import("@/views/i18n/I18nTranslateView.vue"),
+      meta: { title: "多语转译" }
+    },
+    {
       path: "/todos",
       name: "todos",
       component: () => import("@/views/todo/TodoView.vue"),

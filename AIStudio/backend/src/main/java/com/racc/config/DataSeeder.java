@@ -4,8 +4,8 @@ import com.racc.automate.entity.AutomateTaskTypeEntity;
 import com.racc.automate.repository.AutomateTaskTypeRepository;
 import com.racc.llm.entity.LlmProviderEntity;
 import com.racc.llm.repository.LlmProviderRepository;
-import com.racc.role.entity.RolePermissionEntity;
 import com.racc.role.repository.RolePermissionRepository;
+import com.racc.role.service.RolePermissionService;
 import com.racc.user.UserRepository;
 import com.racc.user.entity.UserEntity;
 import org.springframework.boot.CommandLineRunner;
@@ -31,6 +31,7 @@ public class DataSeeder implements CommandLineRunner {
     private final UserRepository users;
     private final PasswordEncoder encoder;
     private final RolePermissionRepository rolePermissionRepository;
+    private final RolePermissionService rolePermissionService;
     private final LlmProviderRepository llmProviderRepository;
     private final SeedStateRepository seedStateRepository;
     private final AutomateTaskTypeRepository automateTaskTypeRepository;
@@ -38,12 +39,14 @@ public class DataSeeder implements CommandLineRunner {
     public DataSeeder(UserRepository users,
                       PasswordEncoder encoder,
                       RolePermissionRepository rolePermissionRepository,
+                      RolePermissionService rolePermissionService,
                       LlmProviderRepository llmProviderRepository,
                       SeedStateRepository seedStateRepository,
                       AutomateTaskTypeRepository automateTaskTypeRepository) {
         this.users = users;
         this.encoder = encoder;
         this.rolePermissionRepository = rolePermissionRepository;
+        this.rolePermissionService = rolePermissionService;
         this.llmProviderRepository = llmProviderRepository;
         this.seedStateRepository = seedStateRepository;
         this.automateTaskTypeRepository = automateTaskTypeRepository;
@@ -72,18 +75,8 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void seedRolePermissions() {
-        if (!rolePermissionRepository.existsByRole("ADMIN")) {
-            RolePermissionEntity adminRole = new RolePermissionEntity();
-            adminRole.setRole("ADMIN");
-            adminRole.setAllowedMenus("*");
-            rolePermissionRepository.save(adminRole);
-        }
-        if (!rolePermissionRepository.existsByRole("USER")) {
-            RolePermissionEntity userRole = new RolePermissionEntity();
-            userRole.setRole("USER");
-            userRole.setAllowedMenus("[]");
-            rolePermissionRepository.save(userRole);
-        }
+        // 内置角色（SUPER_ADMIN/ADMIN/USER）播种 + 历史数据补齐术语/内置标记，幂等
+        rolePermissionService.ensureBuiltinRoles();
     }
 
     private void seedDefaultLlmProviders() {

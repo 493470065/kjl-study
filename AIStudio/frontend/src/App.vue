@@ -8,83 +8,20 @@
       <el-menu :default-active="activeMenu" router :default-openeds="systemSubMenuOpen"
           :collapse="sidebarCollapsed" :collapse-transition="false"
           background-color="transparent" text-color="#d8d2c2" active-text-color="var(--paper)">
-        <!-- 分组在 UED 提案 §2.2 基础上定制（2026-09-01 定稿：工作台/AI助手/AI 配置 三组）；
-             「质量与观测」「系统管理」分组待相应页面开放时启用 -->
-        <!-- 工作台：每天打开处理事务的入口 -->
-        <el-menu-item-group v-if="anyAccess(['/chat', '/todos', '/requirements', '/req-collect', '/i18n-special'])">
-          <template #title><span class="menu-group-title">工作台</span></template>
-          <el-menu-item v-if="auth.hasMenuAccess('/chat')" index="/chat">
-            <el-icon><ChatDotRound /></el-icon>
-            <span>AI 对话</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/todos')" index="/todos">
-            <el-icon><CircleCheck /></el-icon>
-            <span>待办事项</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/requirements')" index="/requirements">
-            <el-icon><DataBoard /></el-icon>
-            <span>需求看板</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/req-collect')" index="/req-collect">
-            <el-icon><DataAnalysis /></el-icon>
-            <span>需求归集</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/i18n-special')" index="/i18n-special">
-            <el-icon><Promotion /></el-icon>
-            <span>多语专项</span>
-          </el-menu-item>
-        </el-menu-item-group>
-
-        <!-- AI助手：沉淀可复用的能力并编排执行（Webhook 开放后收编于此） -->
-        <el-menu-item-group v-if="anyAccess(['/knowledge', '/skills', '/agents', '/workflows', '/automate', '/scheduled-tasks'])">
-          <template #title><span class="menu-group-title">AI助手</span></template>
-          <el-menu-item v-if="auth.hasMenuAccess('/knowledge')" index="/knowledge">
-            <el-icon><Collection /></el-icon>
-            <span>知识库</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/skills')" index="/skills">
-            <el-icon><Files /></el-icon>
-            <span>Skill 管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/agents')" index="/agents">
-            <el-icon><User /></el-icon>
-            <span>Agent 管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/workflows')" index="/workflows">
-            <el-icon><SetUp /></el-icon>
-            <span>工作流编排</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/automate')" index="/automate">
-            <el-icon><Operation /></el-icon>
-            <span>自动化流程</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/scheduled-tasks')" index="/scheduled-tasks">
-            <el-icon><Clock /></el-icon>
-            <span>定时任务</span>
-          </el-menu-item>
-        </el-menu-item-group>
-
-        <!-- AI 配置：对外连接与运行基座（提案：本地算力、沙箱收编于此） -->
-        <el-menu-item-group v-if="anyAccess(['/providers', '/mcp', '/sandbox'])">
-          <template #title><span class="menu-group-title">AI 配置</span></template>
-          <el-menu-item v-if="auth.hasMenuAccess('/providers')" index="/providers">
-            <el-icon><Cpu /></el-icon>
-            <span>LLM 管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/mcp')" index="/mcp">
-            <el-icon><Connection /></el-icon>
-            <span>MCP 管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.hasMenuAccess('/sandbox')" index="/sandbox">
-            <el-icon><Box /></el-icon>
-            <span>沙箱管理</span>
+        <!-- 侧栏由 config/menus.ts 单一数据源渲染：新增菜单只需在 menus.ts 加项，
+             权限过滤走 auth.hasMenuAccess（用户通过角色配置获得菜单） -->
+        <el-menu-item-group v-for="group in renderGroups" :key="group.key">
+          <template #title><span class="menu-group-title">{{ group.label }}</span></template>
+          <el-menu-item v-for="item in group.items" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ item.label }}</span>
           </el-menu-item>
         </el-menu-item-group>
 
         <!--
-          其余页面（首页、运行时监控、审计、评估、结构化输出、本地算力、团队协作、
-          运营看板、开发环境、Webhook、产品线、仓库、账户管理、TFS 看板）
-          维持隐藏：路由仍可直接通过 URL 访问，需要开放时在此按 hasMenuAccess 添加即可。
+          其余隐藏页面（首页、运行时监控、审计、评估、结构化输出、本地算力、团队协作、
+          运营看板、开发环境、Webhook、产品线、仓库、TFS 看板）在 config/menus.ts 中
+          以 visible:false 维护：可授权但不出现在侧栏，路由仍可通过 URL 访问。
         -->
       </el-menu>
     </el-aside>
@@ -171,7 +108,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CircleCheck, DataBoard, DataAnalysis, Collection, Connection, SetUp, Operation, User, Cpu, Files, Key, ArrowDown, Lock, SwitchButton, Fold, Expand, Box, Clock, Promotion } from '@element-plus/icons-vue'
+import { Key, ArrowDown, Lock, SwitchButton, Fold, Expand } from '@element-plus/icons-vue'
+import { SIDEBAR_GROUPS, type MenuGroup } from '@/config/menus'
 import { useAuthStore } from '@/stores/auth'
 import { changePassword, getMyToken, regenerateToken } from '@/api/user'
 
@@ -184,10 +122,12 @@ const systemSubMenuOpen = computed(() =>
 )
 const isLogin = computed(() => route.path === '/login')
 
-/** 分组内任一菜单可访问时显示该分组（权限过滤后避免出现空分组/孤立分隔线） */
-function anyAccess(paths: string[]): boolean {
-  return auth.isAdmin || paths.some(p => auth.hasMenuAccess(p))
-}
+/** 按权限过滤后的侧栏分组：分组内无可访问菜单则整组隐藏 */
+const renderGroups = computed<MenuGroup[]>(() =>
+  SIDEBAR_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(i => auth.hasMenuAccess(i.path)) }))
+    .filter(g => g.items.length > 0)
+)
 
 // 侧栏折叠：窄屏（≤1280px）自动收起为图标栏，可手动切换
 const sidebarCollapsed = ref(window.innerWidth <= 1280)

@@ -1,5 +1,6 @@
 package com.racc.auth;
 
+import com.racc.role.service.RolePermissionService;
 import com.racc.user.entity.UserEntity;
 import com.racc.user.UserRepository;
 import io.jsonwebtoken.Claims;
@@ -9,6 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -27,11 +29,14 @@ public class AuthController {
     private final UserRepository users;
     private final JwtService jwt;
     private final PasswordEncoder encoder;
+    private final RolePermissionService rolePermissions;
 
-    public AuthController(UserRepository users, JwtService jwt, PasswordEncoder encoder) {
+    public AuthController(UserRepository users, JwtService jwt, PasswordEncoder encoder,
+                          RolePermissionService rolePermissions) {
         this.users = users;
         this.jwt = jwt;
         this.encoder = encoder;
+        this.rolePermissions = rolePermissions;
     }
 
     @PostMapping("/login")
@@ -107,13 +112,28 @@ public class AuthController {
         return users.findByUsername(String.valueOf(auth.getPrincipal())).orElse(null);
     }
 
-    static Map<String, Object> toUserInfo(UserEntity user) {
+    /**
+     * 用户信息：菜单权限来自「角色配置」而非用户自身的 allowed_menus 字段，
+     * 即「用户通过角色配置显示哪些菜单」。用户表的 allowedMenus 保留为个人兜底，
+     * 仅当角色无配置时回退使用。
+     */
+    Map<String, Object> toUserInfo(UserEntity user) {
         Map<String, Object> info = new HashMap<>();
         info.put("username", user.getUsername());
         info.put("displayName", user.getDisplayName());
         info.put("role", user.getRole());
-        String menus = user.getAllowedMenus();
-        info.put("allowedMenus", "*".equals(menus) ? "*" : menus.split(","));
+        info.put("roleLabel", rolePermissions.resolveRoleLabel(user.getRole()));
+        Object menus = rolePermissions.resolveMenusForRole(user.getRole());
+        if (menus instanceof String) {
+            info.put("allowedMenus", menus);
+        } else if (menus instanceof java.util.Collection<?> c && !c.isEmpty()) {
+            info.put("allowedMenus", menus);
+        } else {
+            // 角色无配置：回退到用户自身的 allowedMenus（历史数据兼容）
+            String own = user.getAllowedMenus();
+            info.put("allowedMenus", "*".equals(own) ? "*"
+                    : (own == null || own.isBlank() ? Collections.emptyList() : own.split(",")));
+        }
         info.put("empNo", user.getEmpNo());
         return info;
     }

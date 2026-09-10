@@ -3,6 +3,7 @@ package com.racc.user.service;
 import com.racc.llm.entity.LlmProviderEntity;
 import com.racc.llm.repository.LlmProviderRepository;
 import com.racc.llm.service.LlmProviderUserSyncService;
+import com.racc.role.service.RolePermissionService;
 import com.racc.user.UserRepository;
 import com.racc.user.entity.UserEntity;
 import com.racc.user.entity.UserLlmConfigEntity;
@@ -27,17 +28,20 @@ public class UserService {
     private final LlmProviderRepository llmProviderRepository;
     private final LlmProviderUserSyncService providerUserSyncService;
     private final PasswordEncoder passwordEncoder;
+    private final RolePermissionService rolePermissions;
 
     public UserService(UserRepository userRepository,
                        UserLlmConfigRepository llmConfigRepository,
                        LlmProviderRepository llmProviderRepository,
                        LlmProviderUserSyncService providerUserSyncService,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       RolePermissionService rolePermissions) {
         this.userRepository = userRepository;
         this.llmConfigRepository = llmConfigRepository;
         this.llmProviderRepository = llmProviderRepository;
         this.providerUserSyncService = providerUserSyncService;
         this.passwordEncoder = passwordEncoder;
+        this.rolePermissions = rolePermissions;
     }
 
     /**
@@ -72,7 +76,8 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(password));
         user.setDisplayName((String) body.getOrDefault("displayName", ""));
         user.setEmpNo((String) body.getOrDefault("empNo", ""));
-        user.setRole((String) body.getOrDefault("role", "USER"));
+        String role = String.valueOf(body.getOrDefault("role", "USER")).trim().toUpperCase();
+        user.setRole(role);
         user.setEnabled(true);
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
@@ -114,7 +119,7 @@ public class UserService {
             user.setEmpNo((String) body.get("empNo"));
         }
         if (body.containsKey("role")) {
-            user.setRole((String) body.get("role"));
+            user.setRole(String.valueOf(body.get("role")).trim().toUpperCase());
         }
         if (body.containsKey("enabled")) {
             user.setEnabled((Boolean) body.get("enabled"));
@@ -225,14 +230,23 @@ public class UserService {
         info.put("displayName", user.getDisplayName());
         info.put("empNo", user.getEmpNo());
         info.put("role", user.getRole());
+        info.put("roleLabel", rolePermissions.resolveRoleLabel(user.getRole()));
         info.put("enabled", user.getEnabled());
-        String menus = user.getAllowedMenus();
-        if ("*".equals(menus)) {
-            info.put("allowedMenus", "*");
-        } else if (menus != null && !menus.isBlank()) {
-            info.put("allowedMenus", Arrays.asList(menus.split(",")));
+        // 生效菜单 = 角色配置的菜单（用户通过角色获得菜单），角色无配置时回退到用户自身配置
+        Object roleMenus = rolePermissions.resolveMenusForRole(user.getRole());
+        if (roleMenus instanceof String) {
+            info.put("allowedMenus", roleMenus);
+        } else if (roleMenus instanceof Collection<?> c && !c.isEmpty()) {
+            info.put("allowedMenus", roleMenus);
         } else {
-            info.put("allowedMenus", Collections.emptyList());
+            String menus = user.getAllowedMenus();
+            if ("*".equals(menus)) {
+                info.put("allowedMenus", "*");
+            } else if (menus != null && !menus.isBlank()) {
+                info.put("allowedMenus", Arrays.asList(menus.split(",")));
+            } else {
+                info.put("allowedMenus", Collections.emptyList());
+            }
         }
         info.put("createdAt", user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
         info.put("updatedAt", user.getUpdatedAt() != null ? user.getUpdatedAt().toString() : null);

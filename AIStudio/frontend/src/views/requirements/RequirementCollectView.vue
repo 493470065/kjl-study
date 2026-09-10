@@ -37,7 +37,16 @@
                   <el-table :data="row.remainItems" size="small" border>
                     <el-table-column prop="id" label="ID" width="90" />
                     <el-table-column prop="title" label="标题" min-width="260" show-overflow-tooltip />
-                    <el-table-column prop="type" label="类型" width="100" />
+                    <el-table-column label="类型" width="110">
+                      <!-- 类型口径：需求性质（RequirementType：功能性/接口/软件质量）优先；
+                           System.WorkItemType 在需求查询里恒为「需求」，无法区分软质（如 #1769607） -->
+                      <template #default="{ row: it }">
+                        <el-tag
+                          :type="isSoftItem(it) ? 'danger' : it.requirementType?.trim() === '接口' ? 'warning' : 'primary'"
+                          effect="plain" size="small"
+                        >{{ displayTypeOf(it) }}</el-tag>
+                      </template>
+                    </el-table-column>
                     <el-table-column prop="state" label="状态" width="90" />
                     <el-table-column prop="customerName" label="客户" min-width="140" show-overflow-tooltip />
                     <el-table-column label="创建时间" width="110">
@@ -127,25 +136,25 @@
               <span class="filter-count">筛选出 {{ filteredFpiRows(lineKey).length }} 条（功能点 {{ skillRows(lineKey).length }} 个 + 未匹配工单 {{ unmatchedTableRows(lineKey).length }} 条）</span>
             </div>
 
-            <!-- FPI 明细表（功能点粒度，技能数据源，分页每页默认 20 条） -->
-            <el-table :data="pagedFpiRows(lineKey)" border size="small">
+            <!-- FPI 明细表（功能点粒度，技能数据源，分页每页默认 20 条；列头排序在数据侧全量完成，sortable="custom"） -->
+            <el-table :data="pagedFpiRows(lineKey)" :default-sort="sortStateOf(lineKey)" border size="small" @sort-change="(c: any) => onFpiSortChange(lineKey, c)">
               <el-table-column prop="code" label="功能点编码" width="170" show-overflow-tooltip />
               <el-table-column prop="name" label="功能点名称" min-width="180" show-overflow-tooltip />
               <el-table-column prop="module" label="所属模块" width="120" show-overflow-tooltip />
-              <el-table-column prop="total" label="工单数" width="85" align="right" sortable />
-              <el-table-column prop="req" label="需求数" width="110" align="right" sortable />
-              <el-table-column prop="soft" label="软质数" width="100" align="right" sortable />
-              <el-table-column prop="avgMonthly" label="月均工单" width="95" align="right" sortable />
-              <el-table-column label="软质/需求" width="100" align="right" sortable prop="softRatioNum">
+              <el-table-column prop="total" label="工单数" width="85" align="right" sortable="custom" />
+              <el-table-column prop="req" label="需求数" width="110" align="right" sortable="custom" />
+              <el-table-column prop="soft" label="软质数" width="100" align="right" sortable="custom" />
+              <el-table-column prop="avgMonthly" label="月均工单" width="95" align="right" sortable="custom" />
+              <el-table-column label="软质/需求" width="100" align="right" sortable="custom" prop="softRatioNum">
                 <template #default="{ row }">{{ row.softRatioText }}</template>
               </el-table-column>
-              <el-table-column label="趋势" width="100" align="right" sortable prop="trendPct">
+              <el-table-column label="趋势" width="100" align="right" sortable="custom" prop="trendPct">
                 <template #default="{ row }">
                   <span v-if="row.trendPct !== null" :style="{ color: row.trendPct > 0 ? '#c0392b' : row.trendPct < 0 ? '#27865c' : '#909399' }">{{ row.trendText }}</span>
                   <span v-else>{{ row.trendText || '—' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="等级" width="95" align="center">
+              <el-table-column label="等级" width="95" align="center" sortable="custom" prop="level">
                 <template #default="{ row }">
                   <el-tag v-if="row._unmatched" type="warning" effect="plain" size="small">未匹配</el-tag>
                   <el-tag
@@ -460,6 +469,7 @@ import {
   type FpiLevel
 } from '@/data/reqCollectData'
 import { tfsApi, type TfsWorkItem } from '@/api/tfs'
+import { loadPref, savePref } from '@/utils/userPrefs'
 import { mcpApi, type McpServer, type McpToolInfo } from '@/api/mcp'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { skillApi } from '@/api/skill'
@@ -489,9 +499,8 @@ const collectedLines = new Set<string>()
 
 function loadLinks() {
   try {
-    const raw = localStorage.getItem(LS_LINKS_KEY)
-    if (!raw) return
-    const o = JSON.parse(raw)
+    const o = loadPref<Record<string, TfsLink[]> | null>(LS_LINKS_KEY, null)
+    if (!o) return
     for (const k of LINE_KEYS) {
       if (Array.isArray(o[k])) {
         lineLinks[k] = o[k].filter((l: any) => l && (l.queryId || l.name))
@@ -501,7 +510,19 @@ function loadLinks() {
 }
 
 function persistLinks() {
-  localStorage.setItem(LS_LINKS_KEY, JSON.stringify(lineLinks))
+  savePref(LS_LINKS_KEY, lineLinks)
+}
+
+/** 后端校准：换设备/清缓存后首次进入，后端有不同链接配置时派发本事件，用后端值覆盖本地 */
+function applyBackendLinks(o: Record<string, TfsLink[]> | null) {
+  if (!o || typeof o !== 'object') return
+  try {
+    for (const k of LINE_KEYS) {
+      if (Array.isArray(o[k])) {
+        lineLinks[k] = o[k].filter((l: any) => l && (l.queryId || l.name))
+      }
+    }
+  } catch { /* 忽略损坏的后端配置 */ }
 }
 
 // ---- 技能数据源（功能点 FPI 数据，经平台技能或 MCP 工具获取） ----
@@ -731,12 +752,12 @@ const LS_ANA_KEY = 'reqcollect.analysis.v1'
 const anaCfg = reactive({ skillName: '', entry: '', argumentsText: '' })
 function loadAnaCfg() {
   try {
-    const raw = localStorage.getItem(LS_ANA_KEY)
-    if (raw) Object.assign(anaCfg, JSON.parse(raw))
+    const o = loadPref<Partial<typeof anaCfg> | null>(LS_ANA_KEY, null)
+    if (o) Object.assign(anaCfg, o)
   } catch { /* 忽略损坏的缓存 */ }
 }
 function persistAnaCfg() {
-  try { localStorage.setItem(LS_ANA_KEY, JSON.stringify(anaCfg)) } catch { /* 忽略容量错误 */ }
+  try { savePref(LS_ANA_KEY, anaCfg) } catch { /* 忽略容量错误 */ }
 }
 
 function openFpiAnalysis(row: FpiSkillRow) {
@@ -822,30 +843,41 @@ function unmatchedOf(lineKey: string | number): FpiUnmatched | undefined {
 
 function loadSkills() {
   try {
-    const raw = localStorage.getItem(LS_SKILL_KEY)
-    if (!raw) return
-    const o = JSON.parse(raw)
-    for (const k of LINE_KEYS) {
-      if (o[k] && typeof o[k] === 'object') {
-        const kind: 'skill' | 'mcp' = o[k].kind === 'mcp' ? 'mcp' : 'skill'
-        // 旧版配置（无 kind 但有 serverId）视为 MCP 来源
-        const resolved: 'skill' | 'mcp' = o[k].kind ? kind : (o[k].serverId ? 'mcp' : 'skill')
-        lineSkills[k] = {
-          kind: resolved,
-          skillName: String(o[k].skillName || ''),
-          entry: String(o[k].entry || ''),
-          serverId: Number(o[k].serverId || 0),
-          toolName: String(o[k].toolName || ''),
-          argumentsText: String(o[k].argumentsText || '{}'),
-          resultPath: String(o[k].resultPath || '')
-        }
-      }
-    }
+    const o = loadPref<Record<string, any> | null>(LS_SKILL_KEY, null)
+    if (!o) return
+    loadSkillsFrom(o)
   } catch { /* 忽略损坏的本地配置 */ }
 }
 
 function persistSkills() {
-  localStorage.setItem(LS_SKILL_KEY, JSON.stringify(lineSkills))
+  savePref(LS_SKILL_KEY, lineSkills)
+}
+
+/** 后端校准：换设备后本地无技能数据源配置时，用后端值恢复（否则技能数据源显示未配置、界面无数据） */
+function applyBackendSkills(o: Record<string, any> | null) {
+  if (!o || typeof o !== 'object') return
+  try {
+    loadSkillsFrom(o)
+  } catch { /* 忽略损坏的后端配置 */ }
+}
+
+function loadSkillsFrom(o: Record<string, any>) {
+  for (const k of LINE_KEYS) {
+    if (o[k] && typeof o[k] === 'object') {
+      const kind: 'skill' | 'mcp' = o[k].kind === 'mcp' ? 'mcp' : 'skill'
+      // 旧版配置（无 kind 但有 serverId）视为 MCP 来源
+      const resolved: 'skill' | 'mcp' = o[k].kind ? kind : (o[k].serverId ? 'mcp' : 'skill')
+      lineSkills[k] = {
+        kind: resolved,
+        skillName: String(o[k].skillName || ''),
+        entry: String(o[k].entry || ''),
+        serverId: Number(o[k].serverId || 0),
+        toolName: String(o[k].toolName || ''),
+        argumentsText: String(o[k].argumentsText || '{}'),
+        resultPath: String(o[k].resultPath || '')
+      }
+    }
+  }
 }
 
 /** 归集结果缓存：页面加载/切 Tab 时展示上一次手动刷新的数据，不自动拉取 */
@@ -866,30 +898,47 @@ function persistResults() {
         skill: skillResults[k]
       }
     }
-    localStorage.setItem(LS_RESULT_KEY, JSON.stringify({ collectedLines: [...collectedLines], snapshot }))
+    savePref(LS_RESULT_KEY, { collectedLines: [...collectedLines], snapshot })
   } catch { /* 容量不足时忽略缓存写入 */ }
+}
+
+function applyResultsSnapshot(o: any) {
+  const saved: string[] = o.collectedLines || []
+  for (const k of LINE_KEYS) {
+    const s = o.snapshot?.[k]
+    if (!s) continue
+    if (Array.isArray(s.linkResults)) linkResults[k] = s.linkResults
+    if (s.skill && typeof s.skill === 'object') skillResults[k] = s.skill
+    if (saved.includes(k)) collectedLines.add(k)
+  }
 }
 
 function loadResults() {
   try {
-    const raw = localStorage.getItem(LS_RESULT_KEY)
-    if (!raw) return
-    const o = JSON.parse(raw)
-    const saved: string[] = o.collectedLines || []
-    for (const k of LINE_KEYS) {
-      const s = o.snapshot?.[k]
-      if (!s) continue
-      if (Array.isArray(s.linkResults)) linkResults[k] = s.linkResults
-      if (s.skill && typeof s.skill === 'object') skillResults[k] = s.skill
-      if (saved.includes(k)) collectedLines.add(k)
-    }
+    const o = loadPref<any>(LS_RESULT_KEY, null)
+    if (!o) return
+    applyResultsSnapshot(o)
   } catch { /* 忽略损坏的缓存 */ }
 }
 
+/** 后端校准：换浏览器/换设备后恢复上次归集结果（否则界面只有配置、表格空白） */
+function applyBackendResults(o: any) {
+  if (!o || typeof o !== 'object') return
+  try { applyResultsSnapshot(o) } catch { /* 忽略损坏的后端快照 */ }
+}
+
+// 后端校准监听：loadPref 首次触发后端比对，后端有不同值时派发事件，用后端值补齐本浏览器的空白
+const onBackendLinks = (e: Event) => applyBackendLinks((e as CustomEvent).detail as Record<string, TfsLink[]> | null)
+const onBackendSkills = (e: Event) => applyBackendSkills((e as CustomEvent).detail as Record<string, any> | null)
+const onBackendResults = (e: Event) => applyBackendResults((e as CustomEvent).detail)
+
 onMounted(() => {
   loadLinks()
+  window.addEventListener(`userprefs-updated:${LS_LINKS_KEY}`, onBackendLinks)
   loadSkills()
+  window.addEventListener(`userprefs-updated:${LS_SKILL_KEY}`, onBackendSkills)
   loadResults() // 仅恢复上次归集结果，不自动拉取
+  window.addEventListener(`userprefs-updated:${LS_RESULT_KEY}`, onBackendResults)
   loadAnaCfg() // 恢复合理性设计分析技能配置
   // mermaid 流程图兜底：监听分析正文 DOM 变化（v-html 重渲染/抽屉重开），补渲染丢失的流程图
   fpiMmdObserver = new MutationObserver(() => {
@@ -900,6 +949,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener(`userprefs-updated:${LS_LINKS_KEY}`, onBackendLinks)
+  window.removeEventListener(`userprefs-updated:${LS_SKILL_KEY}`, onBackendSkills)
+  window.removeEventListener(`userprefs-updated:${LS_RESULT_KEY}`, onBackendResults)
   fpiMmdObserver?.disconnect()
   fpiMmdObserver = null
   if (fpiMmdTimer) window.clearTimeout(fpiMmdTimer)
@@ -964,6 +1016,18 @@ function isSoftItem(it: TfsWorkItem): boolean {
 /** 需求判定：工单类型属需求类且不是软质（RequirementType=软件质量的需求归软质） */
 function isReqItem(it: TfsWorkItem): boolean {
   return REQ_TYPES.includes((it.type || '').trim()) && !isSoftItem(it)
+}
+
+/**
+ * 明细类型显示口径：优先需求性质 RequirementType（功能性/接口/软件质量），
+ * 为空时回退工单类型 System.WorkItemType。与统计口径（isSoftItem/isReqItem）保持一致：
+ * WorkItemType=需求 但 RequirementType=软件质量 的工单（如 #1769607）显示为「软件质量」。
+ */
+function displayTypeOf(it: TfsWorkItem): string {
+  const rt = (it.requirementType || '').trim()
+  if (rt) return rt
+  const t = (it.type || '').trim()
+  return t || '—'
 }
 
 function metricsOf(items: TfsWorkItem[]): LineMetrics {
@@ -1472,12 +1536,16 @@ interface Analysis {
 /** 等级元数据（复用盘点报告的配色与命名） */
 const FPI_LEVELS = (Object.keys(FPI_LEVEL_META) as FpiLevel[]).map(k => ({ key: k, ...FPI_LEVEL_META[k] }))
 
-/** 实时 FPI 评级阈值（技能未返回等级时按 FPI 分自动评级） */
+/**
+ * 实时 FPI 评级阈值（技能未返回等级时按 FPI 分自动评级）。
+ * 口径与盘点数据（reqCollectData.ts）对齐：FPI=功能点问题指数，高分=危险。
+ * 分档取自住院全量快照实测边界：🔴>76 / 🟠62~76 / 🟡47~62 / 🟢<47。
+ */
 function fpiLevelOf(score: number): FpiLevel {
-  if (score >= 75) return 'health'
-  if (score >= 55) return 'watch'
-  if (score >= 35) return 'warn'
-  return 'danger'
+  if (score > 76) return 'danger'
+  if (score >= 62) return 'warn'
+  if (score >= 47) return 'watch'
+  return 'health'
 }
 
 /** 最近 N 个月的 YYYY-MM 键（含当月，新→旧） */
@@ -1595,6 +1663,40 @@ function a(lineKey: string | number): Analysis {
 
 // ---- 实时筛选（按条线独立） ----
 interface ItemFilter { fpi: FpiLevel | ''; kw: string }
+// 列头排序状态（数据侧全量排序，再分页）：prop + asc/desc；null = 默认排序（等级→问题数→趋势）
+interface FpiSortState { prop: string; order: 'asc' | 'desc' | null }
+const fpiSorts = reactive<Record<string, FpiSortState>>({})
+function fpiSortOf(lineKey: string | number): FpiSortState {
+  const k = String(lineKey)
+  if (!fpiSorts[k]) fpiSorts[k] = { prop: '', order: null }
+  return fpiSorts[k]
+}
+function onFpiSortChange(lineKey: string | number, { prop, order }: { prop: string; order: 'ascending' | 'descending' | null }) {
+  fpiSorts[String(lineKey)] = { prop: prop || '', order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : null }
+  resetFpiPage(lineKey)
+}
+/** 等级治理权重：🔴危险 > 🟠预警 > 🟡关注 > 🟢健康 > 未定级（与治理优先级 P0~P2 对齐） */
+const LEVEL_GOV_WEIGHT: Record<string, number> = { danger: 0, warn: 1, watch: 2, health: 3 }
+function levelGovWeight(level: string | FpiLevel): number {
+  return LEVEL_GOV_WEIGHT[level] ?? 9
+}
+/** 数值比较：null 视为最小（升序垫底） */
+function cmpNum(a: number | null, b: number | null): number {
+  if (a === null && b === null) return 0
+  if (a === null) return -1
+  if (b === null) return 1
+  return a - b
+}
+/** 默认排序：等级（治理优先）→ 问题数（total 降序）→ 趋势（trendPct 降序，「↑↑封顶」按 999）；未匹配/小样本固定垫底 */
+function defaultFpiCompare(x: FpiSkillRow, y: FpiSkillRow): number {
+  const dep = (r: FpiSkillRow) => (r._unmatched ? 1 : 0) + (r.sampleInsufficient ? 1 : 0)
+  if (dep(x) !== dep(y)) return dep(x) - dep(y)
+  const lv = levelGovWeight(x.level) - levelGovWeight(y.level)
+  if (lv !== 0) return lv
+  const total = (y.total ?? 0) - (x.total ?? 0)
+  if (total !== 0) return total
+  return (y.trendPct ?? -Infinity) - (x.trendPct ?? -Infinity)
+}
 function emptyFilter(): ItemFilter { return { fpi: '', kw: '' } }
 const filters = reactive<Record<string, ItemFilter>>({ inpatient: emptyFilter(), outpatient: emptyFilter(), emergency: emptyFilter() })
 
@@ -1612,6 +1714,11 @@ function toggleFpiFilter(lineKey: string | number, level: FpiLevel) {
 
 function fpiLevelCount(lineKey: string | number, level: FpiLevel): number {
   return skillRows(lineKey).filter(r => r.level === level).length
+}
+/** 供 el-table 恢复列头排序箭头（默认排序时不显示箭头） */
+function sortStateOf(lineKey: string | number) {
+  const s = fpiSortOf(lineKey)
+  return s.prop && s.order ? { prop: s.prop, order: s.order === 'desc' ? 'descending' : 'ascending' } : undefined
 }
 
 /** 未匹配工单 → 明细表行（功能点编码/名称显示 -，等级列显示「未匹配」） */
@@ -1634,11 +1741,27 @@ function unmatchedTableRows(lineKey: string | number): FpiSkillRow[] {
 function filteredFpiRows(lineKey: string | number): FpiSkillRow[] {
   const f = filtersOf(lineKey)
   const kw = f.kw.trim().toLowerCase()
-  return [...skillRows(lineKey), ...unmatchedTableRows(lineKey)].filter(r => {
+  const filtered = [...skillRows(lineKey), ...unmatchedTableRows(lineKey)].filter(r => {
     if (f.fpi && r.level !== f.fpi) return false // 未匹配行无等级，等级筛选时自动排除
     if (kw && !(`${r.code} ${r.name} ${r.module} ${r._title || ''}`.toLowerCase().includes(kw))) return false
     return true
-  }).sort((x, y) => (x.fpi ?? 999) - (y.fpi ?? 999)) // 默认按 FPI 升序（未匹配行排最后）；分页下排序需在数据侧完成
+  })
+  // 数据侧全量排序（分页前完成）：列头排序状态为空时用默认治理排序
+  const s = fpiSortOf(lineKey)
+  if (!s.prop || !s.order) return filtered.sort(defaultFpiCompare)
+  const dir = s.order === 'desc' ? -1 : 1
+  return filtered.sort((x, y) => {
+    if (s.prop === 'level') {
+      const lv = levelGovWeight(x.level) - levelGovWeight(y.level)
+      if (lv !== 0) return lv * dir
+      return defaultFpiCompare(x, y)
+    }
+    const xv = (x as any)[s.prop] as number | null
+    const yv = (y as any)[s.prop] as number | null
+    const base = cmpNum(xv, yv)
+    if (base !== 0) return base * dir
+    return defaultFpiCompare(x, y)
+  })
 }
 
 // ---- 功能点明细分页（每页默认 20 条） ----

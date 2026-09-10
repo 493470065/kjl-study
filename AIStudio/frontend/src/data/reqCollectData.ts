@@ -124,6 +124,9 @@ export const INPATIENT_MODULES: ModuleRow[] = [
 ]
 
 // ========== 住院条线：功能点 FPI 全表（112 个，按 FPI 降序） ==========
+// FPI 口径：功能点问题指数（Function Point Issue index），高分=问题密集=更危险。
+// 实测快照分档：🔴危险 >76 / 🟠预警 62~76 / 🟡关注 47~62 / 🟢健康 <47。
+// 前端兜底评级（技能未返回等级时）统一用 fpiLevelOf 按此口径执行。
 export type FpiLevel = 'danger' | 'warn' | 'watch' | 'health'
 
 export interface FpiRow {

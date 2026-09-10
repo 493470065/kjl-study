@@ -7,6 +7,7 @@ interface UserInfo {
   username: string
   displayName: string
   role: string
+  roleLabel?: string
   allowedMenus?: string[] | string
 }
 
@@ -15,14 +16,15 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserInfo | null>(null)
 
   const isAuthenticated = computed(() => !!token.value)
-  const isAdmin = computed(() => user.value?.role === 'ADMIN')
+  const isAdmin = computed(() => user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN')
 
   /** 对所有登录用户开放的功能菜单（不依赖后端 allowedMenus 配置） */
   const PUBLIC_MENUS = ['/todos']
 
   function hasMenuAccess(path: string): boolean {
     if (!user.value) return false
-    if (user.value.role === 'ADMIN') return true
+    // 超级管理员恒定全量菜单（后端也强制返回 "*"，此处兜底）
+    if (user.value.role === 'SUPER_ADMIN') return true
     if (PUBLIC_MENUS.includes(path)) return true
     const menus = user.value.allowedMenus
     if (!menus) return false

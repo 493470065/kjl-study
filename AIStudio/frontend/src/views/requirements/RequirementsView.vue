@@ -360,7 +360,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, RefreshLeft, Search, Setting } from '@element-plus/icons-vue'
@@ -368,7 +368,7 @@ import { tfsApi, type TfsWorkItem, type TfsProject, type TfsAttachment } from '@
 import { mcpApi, type McpServer, type McpToolInfo } from '@/api/mcp'
 import MarkdownIt from 'markdown-it'
 import { formatDateTime, formatDate as formatDateOnly } from '@/utils/format'
-import { loadPref, savePref } from '@/utils/userPrefs'
+import { loadPref, savePref, fetchPrefAsync } from '@/utils/userPrefs'
 
 const router = useRouter()
 
@@ -480,11 +480,11 @@ const configuredQueryIds = reactive<Record<string, string>>({})
 const configuredSources = reactive<Record<string, TabSource>>({})
 const configuredMcp = reactive<Record<string, McpTabConfig>>({})
 
-// 后端校准：首次 loadPref 会触发一次后端比对，后端有不同值时派发本事件，用后端配置刷新视图消费的状态
-function applyBackendConfig(cfg: Partial<ReqboardConfig> | null) {
+/** 把一份配置（本地或后端）合并进内存态：queryIds 兼容两种历史键，
+ *  configKey（reqboard.query.{tab}）与 tab.key（视图只消费 configKey） */
+function applyConfigToState(cfg: Partial<ReqboardConfig> | null) {
   if (!cfg) return
   if (cfg.queryIds) {
-    // queryIds 兼容两种历史键：configKey（reqboard.query.{tab}）与 tab.key（视图只消费 configKey）
     for (const t of TABS) {
       const q = cfg.queryIds[t.configKey] ?? cfg.queryIds[t.key]
       if (q) configuredQueryIds[t.configKey] = q
@@ -501,9 +501,17 @@ function applyBackendConfig(cfg: Partial<ReqboardConfig> | null) {
     }
   }
 }
-window.addEventListener(`userprefs-updated:${LS_KEY}`, (e) => {
-  applyBackendConfig((e as CustomEvent).detail)
-})
+
+/** 以内存态为准构造待保存配置。
+ *  不再用 loadLocalConfig() 从 localStorage 重读——换浏览器首次打开时本地是空白的，
+ *  若此时保存会把「默认值 + 本次改动」写回，覆盖掉其他设备已保存的其余 Tab 配置。 */
+function buildConfigFromState(): ReqboardConfig {
+  return {
+    queryIds: { ...configuredQueryIds },
+    sources: { ...configuredSources },
+    mcp: { ...configuredMcp }
+  }
+}
 
 const activeTabDef = computed<TabDef>(() => TABS.find(t => t.key === activeTab.value) || TABS[0])
 const activeQueryId = computed(() =>
@@ -547,17 +555,12 @@ function parseMcpConfig(raw: string): McpTabConfig | null {
 
 async function loadTabConfigs() {
   try {
-    const cfg = loadLocalConfig()
-    // queryIds 兼容两种历史键：configKey（reqboard.query.{tab}）与 tab.key
-    for (const t of TABS) {
-      const q = cfg.queryIds[t.configKey] ?? cfg.queryIds[t.key]
-      if (q) configuredQueryIds[t.configKey] = q
-    }
-    for (const [k, v] of Object.entries(cfg.sources)) {
-      configuredSources[k] = v === 'mcp' ? 'mcp' : 'tfs'
-    }
-    for (const [k, v] of Object.entries(cfg.mcp)) {
-      if (v) configuredMcp[k] = v
+    applyConfigToState(loadLocalConfig())
+    // 主动合并一次后端最新值：本地空白的浏览器（换设备/换浏览器）在用户动手保存前
+    // 内存态就已完整，从根上消除"保存即覆盖"的窗口
+    const remote = await fetchPrefAsync(LS_KEY)
+    if (remote) {
+      try { applyConfigToState(JSON.parse(remote) as Partial<ReqboardConfig>) } catch { /* 忽略损坏配置 */ }
     }
   } catch {
     // 读取失败时使用默认查询
@@ -597,6 +600,22 @@ function applyTabUi(key: string) {
   customerFilter.value = s.customer || ''
   overdueFilter.value = (s.overdue || '') as OverdueStatus | ''
   if (s.pageSize && [10, 20, 50, 100].includes(s.pageSize)) pageSize.value = s.pageSize
+}
+
+/**
+ * 后端校准：换浏览器/换设备后本地无 UI 态，用后端值恢复上次停留的 Tab 与各 Tab 筛选条件。
+ * 缺这一步时两个浏览器会停在不同 Tab 上，表现就是"有的展示数据、有的显示没有配置"。
+ */
+function applyBackendUi(ui: Partial<ReqboardUi> | null) {
+  if (!ui || typeof ui !== 'object') return
+  if (ui.perTab && typeof ui.perTab === 'object') Object.assign(reqUi.perTab, ui.perTab)
+  const tab = String(ui.activeTab || '')
+  if (!tab || !TABS.some(t => t.key === tab)) return
+  reqUi.activeTab = tab
+  activeTab.value = tab
+  applyTabUi(tab)
+  currentPage.value = 1
+  if (!tabLoaded[tab]) loadTab(tab)
 }
 
 const projects = ref<TfsProject[]>([])
@@ -885,7 +904,7 @@ async function saveTabConfig() {
   const tab = activeTabDef.value
   configSaving.value = true
   try {
-    const cfg = loadLocalConfig()
+    const cfg = buildConfigFromState()
     if (formSource.value === 'mcp') {
       if (!formMcp.serverId || !formMcp.toolName) {
         ElMessage.error('请选择 MCP 服务和工具')
@@ -930,7 +949,7 @@ async function saveTabConfig() {
 async function resetTabConfig() {
   const tab = activeTabDef.value
   // 清除该 Tab 的三类配置：查询链接 / 数据源类型 / MCP 配置
-  const cfg = loadLocalConfig()
+  const cfg = buildConfigFromState()
   delete cfg.queryIds[tab.configKey]
   delete cfg.sources[tab.key]
   delete cfg.mcp[tab.key]
@@ -1171,7 +1190,28 @@ function handleTabChange(name: string | number) {
 }
 
 // ========== 初始化 ==========
+// 后端校准监听：注册必须先于 loadTabConfigs（其内部 await 期间事件可能已到达）
+const onBackendConfig = (e: Event) => {
+  const before = hasDataSource.value
+  applyConfigToState((e as CustomEvent).detail)
+  // 本地空白时当前 Tab 已按"无配置"加载过并停在「去配置」空态，拿到后端配置后需重拉
+  if (!before && hasDataSource.value) {
+    tabLoaded[activeTab.value] = false
+    loadTab(activeTab.value)
+  }
+}
+const onBackendUi = (e: Event) => applyBackendUi((e as CustomEvent).detail as Partial<ReqboardUi> | null)
+
+/**
+ * 首屏强刷标记：进入看板时强制绕过后端的 5 分钟 SWR 新鲜期，直接拉 TFS 最新数据。
+ * 只在"本次页面会话首次打开"时强刷一次——切到别的菜单再回来、以及切换 Tab 都仍走缓存，
+ * 否则每次进页面都要现场等 TFS 查询（实测 50s+）。刷新浏览器后模块重载，会再次强刷。
+ */
+let firstOpenRefreshed = false
+
 onMounted(async () => {
+  window.addEventListener(`userprefs-updated:${LS_KEY}`, onBackendConfig)
+  window.addEventListener(`userprefs-updated:${LS_UI_KEY}`, onBackendUi)
   await checkStatus()
   await loadTabConfigs()
   // 恢复上次停留的 Tab 与该 Tab 的查询条件
@@ -1182,10 +1222,18 @@ onMounted(async () => {
   await ensureMcpServers()
   // TFS 不可用时，若首屏 Tab 走的是 MCP 数据源，仍应尝试加载
   if (tfsAvailable.value || configuredSources[restoredTab] === 'mcp') {
-    loadTab(restoredTab)
+    // 初次打开：force 绕过后端 SWR 缓存拿实时数据（不等下一次后台静默刷新）
+    const force = !firstOpenRefreshed
+    firstOpenRefreshed = true
+    loadTab(restoredTab, force ? { force: true } : undefined)
   }
   // 首屏 Tab 加载中即开始后台串行预取其余 Tab（静默），之后切 Tab 零等待
   prefetchOtherTabs(restoredTab)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(`userprefs-updated:${LS_KEY}`, onBackendConfig)
+  window.removeEventListener(`userprefs-updated:${LS_UI_KEY}`, onBackendUi)
 })
 </script>
 
