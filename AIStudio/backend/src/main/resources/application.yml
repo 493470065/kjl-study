@@ -62,7 +62,10 @@ racc:
     expire-hours: 24
   # 绝对路径：../data 相对路径依赖后端进程 cwd（从 backend/ 启动才正确），
   # 从 AIStudio 根目录启动时会解析到 F:/kjl-study/data，导致 skills/uploads 全部"消失"
-  data-dir: F:/kjl-study/AIStudio/data
+  # 绝对路径：跟随实际安装位置。此前写死 F:/kjl-study/AIStudio/data，但工程实际在 E:\KjlStudy\AI\kjl-study\AIStudio，
+  # 导致后端在 F 盘自动创建空 data 目录、全部技能加载不到（Skill 列表为空、Agent 技能注入失效）。
+  # 运行时可用环境变量 RACC_DATADIR 或 -Dracc.data-dir=... 覆盖
+  data-dir: ${RACC_DATADIR:E:/KjlStudy/AI/kjl-study/AIStudio/data}
   tfs:
     # TFS 站点基址（构建 _workitems 链接、桥接 MCP 取数的默认值；系统配置功能已下掉，此处为唯一来源）
     default-server-url: http://tfs2018-web.winning.com.cn:8080/tfs/WINNING-6.0
