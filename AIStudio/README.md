@@ -19,9 +19,20 @@
 
 脚本会自动：
 1. 启动 MySQL 8.0（`E:\KjlStudy\mysql`，端口 3306，库 `racc`）
-2. 启动后端（Spring Boot，端口 8091）
-3. 启动前端（Vue3 + Vite，端口 8090）
-4. 等待后端就绪后自动打开浏览器
+2. **检测 `racc` 库不存在时自动导入 `db\` 初始化脚本**（建库 + 表结构 + 种子数据，日志见 `logs\db-init.log`）
+3. 启动后端（Spring Boot，端口 8091）
+4. 启动前端（Vue3 + Vite，端口 8090）
+5. 等待后端就绪后自动打开浏览器
+
+### 新电脑部署（从零开始）
+
+1. 安装 Git 后 `git clone` 本仓库
+2. 安装便携版 MySQL 8.0 到纯英文路径（如 `E:\KjlStudy\mysql`），路径不同时设置系统环境变量 `MYSQL_HOME`
+3. 复制 `tools\env.cmd.example` 为 `tools\env.cmd`，填入本机 JDK/Maven/LLM Key（此文件含密钥，不入库）
+4. 前端 `cd frontend && npm install`
+5. 构建后端 jar：`mvn -f backend/pom.xml package -DskipTests`（或 `bash tools/start-backend.sh --build`）
+6. 双击 `启动平台.bat` —— 首次运行会自动建库导表并写入种子数据（admin 账号、角色权限、自动化任务类型等）
+7. 若拉取的代码较新、`db\03_migrations\` 下有增量脚本，按编号顺序手动执行
 
 ### 方式二：手动启动
 
@@ -71,9 +82,14 @@ E:\KjlStudy\AI\AIStudio\
 ├── tools\                # 本地工具链
 │   ├── jdk-17.0.20+8\    # JDK 17（本地，无需系统安装）
 │   ├── apache-maven-3.9.16\  # Maven
-│   ├── env.cmd           # Windows 环境脚本
-│   ├── env.sh            # Git Bash 环境脚本
+│   ├── env.cmd           # Windows 环境脚本（含密钥，不入库，参考 env.cmd.example）
+│   ├── env.sh            # Git Bash 环境脚本（同上，参考 env.sh.example）
 │   └── migration\        # SQLite→MySQL 一次性迁移工具（已执行，留档）
+├── db\                   # 数据库脚本（随 git 同步，新电脑可从零重建 racc 库）
+│   ├── 00_init_database.sql  # 一键初始化：建库 + 导入 schema/seed
+│   ├── 01_schema.sql         # 全量表结构（45 张表）
+│   ├── 02_seed.sql           # 种子数据（账号/角色/自动化任务类型等）
+│   └── 03_migrations\        # 增量迁移脚本目录（约定见其 README.md）
 └── data\                 # 运行时数据
     ├── racc.db           # 旧 SQLite 库（2026-08-25 已全量迁移至 MySQL，留档备份）
     ├── uploads\          # 知识库上传文件
@@ -109,7 +125,7 @@ E:\KjlStudy\mysql\           # MySQL 8.0.29 服务端（便携版，置于纯英
 | 全文索引 | `knowledge_documents` 上 FULLTEXT + ngram 分词（中文检索） |
 
 连接参数支持环境变量覆盖：`MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DB` / `MYSQL_USER` / `MYSQL_PASSWORD`（见 `application.yml`）。
-建表由 Hibernate `ddl-auto: update` 维护；2026-08-25 已将原 SQLite 全量数据（38 表 / 2.4 万行，含 23,821 篇知识库文档）迁移至 MySQL，迁移工具留档于 `tools\migration\`。
+表结构由 Hibernate `ddl-auto: update` 维护，同时 `db\` 目录保存了全量 DDL 与种子数据快照用于新机部署；**每次修改表结构/种子数据，请在 `db\03_migrations\` 追加编号迁移脚本，并随代码同一 commit 提交**。
 
 ### LLM（大模型）
 

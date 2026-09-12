@@ -38,6 +38,42 @@ echo [提示] MySQL 已在运行中。
 echo [OK] MySQL 就绪完成。
 echo.
 
+REM ============ 1.5 数据库自动初始化（racc 库不存在时导入 db\ 脚本） ============
+set "MYSQL_CLIENT=%MYSQL_HOME%\bin\mysql.exe"
+if not exist "%MYSQL_CLIENT%" (
+    echo [警告] 找不到 %MYSQL_CLIENT%，跳过数据库初始化检查。
+    goto mysql_init_done
+)
+"%MYSQL_CLIENT%" -uroot -pracc123 -N -e "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='racc'" >nul 2>&1
+if not errorlevel 1 goto db_exists
+echo [初始化] 检测到 racc 库不存在，正在导入 db\ 脚本（首次部署）...
+if not exist "%~dp0db\01_schema.sql" (
+    echo [错误] 找不到 %~dp0db\01_schema.sql，无法初始化数据库。
+    goto mysql_init_done
+)
+if exist "%~dp0db\00_init_database.sql" (
+    cd /d "%~dp0db"
+    "%MYSQL_CLIENT%" -uroot -pracc123 < 00_init_database.sql >> "%~dp0logs\db-init.log" 2>&1
+    cd /d "%~dp0"
+) else (
+    echo CREATE DATABASE IF NOT EXISTS racc DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; USE racc;> "%TEMP%\racc_init.sql"
+    type "%~dp0db\01_schema.sql" >> "%TEMP%\racc_init.sql"
+    type "%~dp0db\02_seed.sql" >> "%TEMP%\racc_init.sql"
+    "%MYSQL_CLIENT%" -uroot -pracc123 < "%TEMP%\racc_init.sql" >> "%~dp0logs\db-init.log" 2>&1
+    del "%TEMP%\racc_init.sql" >nul 2>&1
+)
+if errorlevel 1 (
+    echo [警告] 数据库初始化可能失败，请查看 logs\db-init.log。
+) else (
+    echo [OK] 数据库初始化完成（结构 + 种子数据）。
+)
+echo [提示] 若代码较新，请按编号顺序补执行 db\03_migrations\ 下的增量脚本。
+goto mysql_init_done
+:db_exists
+echo [提示] racc 库已存在，跳过初始化。
+:mysql_init_done
+echo.
+
 REM ============ 2. 前端 8090 ============
 netstat -ano | findstr ":8090 " | findstr "LISTENING" >nul 2>&1
 if not errorlevel 1 goto frontend_running
