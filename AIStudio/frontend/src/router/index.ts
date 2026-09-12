@@ -56,6 +56,12 @@ const router = createRouter({
       meta: { title: "多语专项" }
     },
     {
+      path: "/work-report",
+      name: "workReport",
+      component: () => import("@/views/report/WorkReportView.vue"),
+      meta: { title: "工作汇报" }
+    },
+    {
       path: "/i18n-translate",
       name: "i18nTranslate",
       component: () => import("@/views/i18n/I18nTranslateView.vue"),

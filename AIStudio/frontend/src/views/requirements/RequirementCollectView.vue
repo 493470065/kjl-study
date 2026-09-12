@@ -813,7 +813,12 @@ async function runFpiAnalysis() {
     const out = (res.stdout || '').trim()
     fpiAnalysisText.value = out || '> ⚠ 技能未返回分析内容（stdout 为空，检查脚本输出）'
   } catch (e: any) {
-    fpiAnalysisText.value = `> ⚠ 分析失败：${e?.response?.data?.error || e?.message || '未知错误'}`
+    const msg = String(e?.response?.data?.error || e?.message || '未知错误')
+    // 提示词型技能（只有 SKILL.md/references，无 scripts/ 入口）无法被平台执行器运行
+    const hint = msg.includes('未指定入口')
+      ? '——当前选择的技能是「提示词型」（没有可执行脚本），请在上方改选带执行入口的技能（如 rationality-analysis-v1、rational-design-v1）'
+      : ''
+    fpiAnalysisText.value = `> ⚠ 分析失败：${msg}${hint}`
   } finally {
     fpiAnalyzing.value = false
   }

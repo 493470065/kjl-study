@@ -10,7 +10,7 @@ import {
   ChatDotRound, CircleCheck, DataBoard, DataAnalysis, Collection, Connection,
   SetUp, Operation, User, Cpu, Files, Key, Box, Clock, Promotion, EditPen,
   Monitor, Document, UserFilled, Files as FolderIcon, DataLine, TrendCharts,
-  Tools, Link, Coin, MagicStick
+  Tools, Link, Coin, MagicStick, Memo
 } from '@element-plus/icons-vue'
 
 export interface MenuItem {
@@ -40,7 +40,8 @@ export const MENU_GROUPS: MenuGroup[] = [
       { path: '/todos', label: '待办事项', icon: CircleCheck },
       { path: '/requirements', label: '需求看板', icon: DataBoard },
       { path: '/req-collect', label: '需求归集', icon: DataAnalysis },
-      { path: '/i18n-special', label: '多语专项', icon: Promotion }
+      { path: '/i18n-special', label: '多语专项', icon: Promotion },
+      { path: '/work-report', label: '工作汇报', icon: Memo }
     ]
   },
   {

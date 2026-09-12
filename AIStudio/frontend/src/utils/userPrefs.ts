@@ -21,7 +21,7 @@ export const KNOWN_PREF_KEYS = [
   'reqboard.config.v1', 'reqboard.ui.v1',
   'reqcollect.links.v1', 'reqcollect.skills.v1', 'reqcollect.analysis.v1', 'reqcollect.results.v1',
   'kv_column_visibility', 'kv_fixed_column_visibility', 'kv_scan_fixed_column_visibility',
-  'skills.collapsed.v1', 'chat-conversation-id'
+  'skills.collapsed.v1', 'chat-conversation-id', 'workreport.executor.v1'
 ] as const
 
 /** 登出/切换账号时调用：清空会话内"已校准"与"已保存"标记，让下次 loadPref 重新走后端校准 */
