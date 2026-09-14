@@ -92,9 +92,9 @@ export const mcpApi = {
    * 通用工具调用：按 serverId + toolName + 参数调用 MCP 工具，返回解析后的 JSON。
    * 供需求看板「MCP 数据源」取数使用；非 JSON 结果后端返回 { raw: '...' }。
    */
-  callTool(id: number, toolName: string, args: Record<string, any> = {}) {
+  callTool(id: number, toolName: string, args: Record<string, any> = {}, refresh = false) {
     return http
-      .post<any>(`/mcp/servers/${id}/call`, { toolName, arguments: args }, { timeout: 150000 })
+      .post<any>(`/mcp/servers/${id}/call`, { toolName, arguments: args, refresh }, { timeout: 150000 })
       .then(r => r.data)
   },
 

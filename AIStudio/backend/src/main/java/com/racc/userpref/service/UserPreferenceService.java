@@ -2,8 +2,10 @@ package com.racc.userpref.service;
 
 import com.racc.userpref.entity.UserPreferenceEntity;
 import com.racc.userpref.repository.UserPreferenceRepository;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -14,15 +16,17 @@ import java.util.regex.Pattern;
  * 值为前端 JSON 原文，后端不感知业务结构——新增配置类型无需改后端。
  */
 @Service
-@Transactional
 public class UserPreferenceService {
 
     private static final Pattern KEY_PATTERN = Pattern.compile("[a-zA-Z0-9._-]{1,64}");
 
     private final UserPreferenceRepository repository;
+    /** 自代理：并发冲突重试必须经代理进入新事务/新 Session，同类直调注解不生效。 */
+    private final UserPreferenceService self;
 
-    public UserPreferenceService(UserPreferenceRepository repository) {
+    public UserPreferenceService(UserPreferenceRepository repository, @Lazy UserPreferenceService self) {
         this.repository = repository;
+        this.self = self;
     }
 
     /** key 白名单：仅字母数字点下划线连字符，≤64 位。非法抛 IllegalArgumentException。 */
@@ -41,20 +45,24 @@ public class UserPreferenceService {
     }
 
     /**
-     * upsert：优先走"查到即更新"分支；并发下唯一约束冲突时重查一次改走更新，收敛竞争窗口。
-     * （check-then-insert 在并发 PUT 同 key 时，第二个提交会撞 (user_id, pref_key) 唯一约束，
-     * 捕获 DataIntegrityViolationException 后重查——对方已提交，此分支必然命中既有行。）
+     * upsert：并发 PUT 同 key 时第二个提交会撞 (user_id, pref_key) 唯一约束。
+     * 捕获 DataIntegrityViolationException 后重查改走更新。
+     * 关键：重试必须经代理进入 REQUIRES_NEW 事务——否则异常已标记当前 Session 回滚
+     * （HHH000099: null id ... don't flush the Session after an exception occurs），
+     * 同 Session 内的补偿更新依然失败，前端看到 500。
      */
     public void savePref(Long userId, String key, String jsonValue) {
         validateKey(key);
         try {
-            doSavePref(userId, key, jsonValue);
+            self.doSavePref(userId, key, jsonValue);
         } catch (DataIntegrityViolationException e) {
-            doSavePref(userId, key, jsonValue);
+            self.doSavePref(userId, key, jsonValue);
         }
     }
 
-    private void doSavePref(Long userId, String key, String jsonValue) {
+    /** 经 self 代理调用才生效：REQUIRES_NEW 保证重试在全新 Session 中执行。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void doSavePref(Long userId, String key, String jsonValue) {
         UserPreferenceEntity entity = repository.findByUserIdAndPrefKey(userId, key)
                 .orElseGet(() -> {
                     UserPreferenceEntity e = new UserPreferenceEntity();

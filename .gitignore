@@ -40,3 +40,9 @@ Thumbs.db
 AIStudio/backend-restart.out
 AIStudio/backend/build.out
 AIStudio/backend/build.err
+
+# ===== 运行时日志目录（一键启动/前后端输出）=====
+AIStudio/logs/
+
+# ===== 技能执行调试产物 =====
+AIStudio/exec2.json

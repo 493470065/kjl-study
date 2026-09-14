@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="headerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#CE704B"/>
+      <stop offset="100%" stop-color="#CE704B"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="1280" height="720" fill="#FDF8F3"/>
+  
+  <rect x="0" y="0" width="1280" height="80" fill="url(#headerGradient)"/>
+  
+  <rect x="0" y="80" width="1280" height="15" fill="#FAF6F1"/>
+  
+  <text x="60" y="52" fill="#FFFFFF" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="32" font-weight="bold">{{PAGE_TITLE}}</text>
+  
+  <image x="1090" y="15" width="180" height="52" xlink:href="卫宁健康logo2.png" preserveAspectRatio="xMidYMid meet"/>
+  
+  <rect x="40" y="130" width="3" height="480" fill="#D4A84B" fill-opacity="0.65"/>
+  
+  <rect x="60" y="120" width="1160" height="50" fill="#FAF6F1" rx="6"/>
+  <rect x="60" y="120" width="4" height="50" fill="#CE704B"/>
+  <text x="80" y="152" fill="#CE704B" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" font-weight="bold">核心观点</text>
+  <text x="170" y="152" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="15">{{KEY_MESSAGE}}</text>
+  
+  <rect x="60" y="190" width="1160" height="440" fill="#FFFFFF" stroke="#FAF6F1" stroke-width="2" rx="8"/>
+  <text x="640" y="410" text-anchor="middle" fill="#C4C4C4" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16">{{CONTENT_AREA}}</text>
+  
+  <path d="M0,690 Q160,680 320,690 T640,680 T960,690 T1280,680 L1280,720 L0,720 Z" fill="#CE704B" fill-opacity="0.06"/>
+  
+  <rect x="0" y="650" width="1280" height="70" fill="#FDF8F3"/>
+  
+  <text x="60" y="685" fill="#6B6B6B" font-family="Microsoft YaHei, Arial, sans-serif" font-size="11">数据来源：{{SOURCE}}</text>
+  
+  <circle cx="50" cy="670" r="3" fill="#D4A84B" fill-opacity="0.55"/>
+</svg>

@@ -20,7 +20,8 @@ class UserPreferenceServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(UserPreferenceRepository.class);
-        service = new UserPreferenceService(repository);
+        // @Lazy 自代理：单测中直接传 this 即可，savePref 内部经 self 调用 doSavePref
+        service = new UserPreferenceService(repository, service);
     }
 
     // ---------- getPref ----------

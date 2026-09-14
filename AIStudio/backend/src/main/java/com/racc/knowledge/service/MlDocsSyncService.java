@@ -90,7 +90,7 @@ public class MlDocsSyncService {
 
     /** otl 智能文档：读根块并递归收集所有文本 content */
     private String extractOtl(String fileId) throws Exception {
-        JsonNode root = runCli(new String[]{resolveCli(), "otl", "block-query", "--silent"},
+        JsonNode root = runCli(withArgs("otl", "block-query", "--silent"),
                 om.writeValueAsString(Map.of("file_id", fileId, "params", Map.of("blockIds", List.of("doc")))));
         StringBuilder sb = new StringBuilder();
         collectText(root, sb);
@@ -127,7 +127,7 @@ public class MlDocsSyncService {
         params.put("file_id", fileId);
         params.put("sheetId", 1);
         params.put("range", range);
-        JsonNode root = runCli(new String[]{resolveCli(), "sheet", "get-range-data", "--silent"},
+        JsonNode root = runCli(withArgs("sheet", "get-range-data", "--silent"),
                 om.writeValueAsString(params));
         JsonNode cells = root.path("detail").path("rangeData");
         if (cells.isMissingNode() || cells.isNull() || !cells.isArray()) {
@@ -188,7 +188,7 @@ public class MlDocsSyncService {
 
     /** link_id → 文件信息（drive_id/file_id/name） */
     private Map<String, Object> getFileInfo(String linkId) throws Exception {
-        JsonNode data = runCli(new String[]{resolveCli(), "drive", "get-file-info", "--silent"},
+        JsonNode data = runCli(withArgs("drive", "get-file-info", "--silent"),
                 om.writeValueAsString(Map.of("link_id", linkId)));
         JsonNode d = data.path("data");
         if (d.isMissingNode() || d.isNull()) throw new IllegalStateException("获取文件信息失败");
@@ -199,29 +199,42 @@ public class MlDocsSyncService {
         return info;
     }
 
-    /** 解析 kdocs-cli 可执行文件路径（与 WbsSyncService 同策略） */
-    private String resolveCli() {
+    /** 解析 kdocs-cli 启动命令前缀（支持 exe / cmd 包装 / js 垫片三种形态，与 WbsSyncService 同策略） */
+    private List<String> resolveCliCommand() {
         String env = System.getenv("KDOCS_CLI");
-        if (env != null && !env.isBlank()) return env;
+        if (env != null && !env.isBlank()) return wrapCli(env.trim());
         String localAppData = System.getenv("LOCALAPPDATA");
         if (localAppData != null) {
-            java.io.File f = new java.io.File(localAppData, "kdocs-cli/kdocs-cli.exe");
-            if (f.exists()) return f.getAbsolutePath();
+            for (String name : List.of("kdocs-cli.exe", "kdocs-cli.cmd", "kdocs-cli.js")) {
+                java.io.File f = new java.io.File(localAppData, "kdocs-cli/" + name);
+                if (f.exists()) return wrapCli(f.getAbsolutePath());
+            }
         }
         for (String dir : System.getenv("PATH").split(";")) {
-            java.io.File f = new java.io.File(dir.trim(), "kdocs-cli.exe");
-            if (f.exists()) return f.getAbsolutePath();
-            java.io.File f2 = new java.io.File(dir.trim(), "kdocs-cli");
-            if (f2.exists()) return f2.getAbsolutePath();
+            if (dir == null || dir.isBlank()) continue;
+            for (String name : List.of("kdocs-cli.exe", "kdocs-cli.cmd", "kdocs-cli.js")) {
+                java.io.File f = new java.io.File(dir.trim(), name);
+                if (f.exists()) return wrapCli(f.getAbsolutePath());
+            }
         }
-        return "kdocs-cli";
+        throw new IllegalStateException(
+                "本机未找到 kdocs-cli（查找顺序：环境变量 KDOCS_CLI → %LOCALAPPDATA%\\kdocs-cli\\ → PATH）"
+                        + "：请安装 kdocs-cli（或 Node 垫片 kdocs-cli.js）并执行 auth login 完成授权后重试");
+    }
+
+    /** js 用 node 启动；cmd/bat 需经 cmd /c（CreateProcess 不能直接跑批处理）；exe 直接启动 */
+    private List<String> wrapCli(String path) {
+        String lower = path.toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".js")) return List.of("node", path);
+        if (lower.endsWith(".cmd") || lower.endsWith(".bat")) return List.of("cmd", "/c", path);
+        return List.of(path);
     }
 
     /**
      * 调用 CLI 并解析 JSON 输出（code!=0 抛异常）。
      * JSON 参数经 stdin 传入：Windows 进程传参会剥掉内联 JSON 的双引号导致 CLI 解析失败。
      */
-    private JsonNode runCli(String[] cmd, String jsonPayload) throws Exception {
+    private JsonNode runCli(List<String> cmd, String jsonPayload) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(false);
         Process proc = pb.start();
@@ -241,7 +254,7 @@ public class MlDocsSyncService {
         t2.start();
         if (!proc.waitFor(120, TimeUnit.SECONDS)) {
             proc.destroyForcibly();
-            throw new IllegalStateException("kdocs-cli 调用超时: " + cmd[1] + " " + cmd[2]);
+            throw new IllegalStateException("kdocs-cli 调用超时: " + String.join(" ", cmd));
         }
         t1.join(5000);
         t2.join(5000);
@@ -254,7 +267,7 @@ public class MlDocsSyncService {
         JsonNode root = om.readTree(outStr);
         if (root.path("code").asInt(0) != 0) {
             throw new IllegalStateException(root.path("code").asInt() == 400006
-                    ? "金山文档 Token 已失效，请在本机执行 kdocs-cli auth login 重新授权"
+                    ? "金山文档 Token 未配置或已失效，请在本机执行 kdocs-cli auth login 重新授权"
                     : "kdocs-cli 错误码 " + root.path("code").asInt() + "：" + snippet(root.path("message").asText(outStr)));
         }
         return root;

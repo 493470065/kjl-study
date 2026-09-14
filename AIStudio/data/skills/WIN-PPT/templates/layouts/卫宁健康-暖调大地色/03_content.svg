@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="topBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#BD1B01"/>
+      <stop offset="50%" stop-color="#D4A84B"/>
+      <stop offset="100%" stop-color="#BD1B01"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="1280" height="720" fill="#FDF8F3"/>
+  
+  <rect x="0" y="0" width="1280" height="8" fill="url(#topBar)"/>
+  
+  <rect x="60" y="80" width="6" height="40" fill="#D4A84B"/>
+  
+  <text x="85" y="110" fill="#333333" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="32" font-weight="bold">{{PAGE_TITLE}}</text>
+</svg>

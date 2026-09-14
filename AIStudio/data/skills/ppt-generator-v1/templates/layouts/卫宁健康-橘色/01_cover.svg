@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="leftGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#CE704B"/>
+      <stop offset="100%" stop-color="#CE704B"/>
+    </linearGradient>
+    <linearGradient id="goldLine" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#C49A3D"/>
+      <stop offset="50%" stop-color="#D4A84B"/>
+      <stop offset="100%" stop-color="#C49A3D"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="1280" height="720" fill="#FDF8F3"/>
+  
+  <rect x="0" y="0" width="450" height="720" fill="url(#leftGradient)"/>
+  
+  <line x1="50" y1="0" x2="50" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.08"/>
+  <line x1="100" y1="0" x2="100" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.05"/>
+  <line x1="350" y1="0" x2="350" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.08"/>
+  <line x1="400" y1="0" x2="400" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.05"/>
+  
+  <rect x="448" y="100" width="4" height="520" fill="url(#goldLine)"/>
+  
+  <image x="75" y="260" width="300" height="90" xlink:href="卫宁健康logo2.png" preserveAspectRatio="xMidYMid meet"/>
+  
+  <text x="225" y="650" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.12" font-family="Arial, sans-serif" font-size="72" font-weight="bold">WINNING</text>
+  
+  <text x="860" y="280" text-anchor="middle" fill="#1A1A1A" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="44" font-weight="bold">{{TITLE}}</text>
+  
+  <text x="860" y="340" text-anchor="middle" fill="#6B6B6B" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20">{{SUBTITLE}}</text>
+  
+  <rect x="710" y="380" width="300" height="2" fill="url(#goldLine)"/>
+  <circle cx="710" cy="381" r="4" fill="#D4A84B"/>
+  <circle cx="1010" cy="381" r="4" fill="#D4A84B"/>
+  
+  <text x="860" y="450" text-anchor="middle" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">
+    <tspan fill="#CE704B" font-weight="bold">答辩人</tspan>
+    <tspan dx="16">{{AUTHOR}}</tspan>
+  </text>
+  
+  <text x="860" y="490" text-anchor="middle" fill="#6B6B6B" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16">
+    <tspan>指导老师：{{ADVISOR}}</tspan>
+  </text>
+  
+  <text x="860" y="530" text-anchor="middle" fill="#6B6B6B" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16">{{INSTITUTION}}</text>
+  
+  <rect x="780" y="620" width="160" height="36" fill="#FAF6F1" rx="18"/>
+  <text x="860" y="644" text-anchor="middle" fill="#6B6B6B" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14">{{DATE}}</text>
+  
+  <polygon points="1280,600 1280,720 1160,720" fill="#CE704B" fill-opacity="0.08"/>
+  <polygon points="1280,660 1280,720 1200,720" fill="#D4A84B" fill-opacity="0.12"/>
+  
+  <line x1="1100" y1="60" x2="1240" y2="60" stroke="#CE704B" stroke-width="1" stroke-opacity="0.25"/>
+  <line x1="1150" y1="90" x2="1240" y2="90" stroke="#D4A84B" stroke-width="1" stroke-opacity="0.35"/>
+  <circle cx="1240" cy="60" r="3" fill="#CE704B" fill-opacity="0.4"/>
+  <circle cx="1240" cy="90" r="3" fill="#D4A84B" fill-opacity="0.5"/>
+  
+  <path d="M0,680 Q200,665 400,680 T800,665 T1200,680 L1280,680 L1280,720 L0,720 Z" fill="#CE704B" fill-opacity="0.06"/>
+</svg>

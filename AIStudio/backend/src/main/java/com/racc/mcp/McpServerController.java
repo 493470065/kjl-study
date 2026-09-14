@@ -43,12 +43,17 @@ public class McpServerController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<McpServerEntity> uploadServer(
+    public ResponseEntity<?> uploadServer(
             @RequestParam("name") String name,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "displayName", required = false) String displayName,
             @RequestParam(value = "description", required = false) String description) {
-        return ResponseEntity.ok(service.uploadServer(name, file, displayName, description));
+        try {
+            return ResponseEntity.ok(service.uploadServer(name, file, displayName, description));
+        } catch (IllegalArgumentException e) {
+            // 参数/名称类问题 → 400 + 明确文案，前端可直接展示（避免裸 500 Internal Server Error）
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @PostMapping("/create")
@@ -115,7 +120,9 @@ public class McpServerController {
             args = Map.of();
         }
         try {
-            return ResponseEntity.ok(service.callToolJson(id, toolName, args));
+            // refresh=true（需求看板「刷新」按钮）：绕过 120s 调用缓存强刷最新
+            boolean forceRefresh = Boolean.parseBoolean(String.valueOf(body == null ? null : body.get("refresh")));
+            return ResponseEntity.ok(service.callToolJson(id, toolName, args, forceRefresh));
         } catch (RuntimeException e) {
             String msg = e.getMessage() == null ? "MCP 工具调用失败" : e.getMessage();
             return ResponseEntity.status(502).body(Map.of("error", msg));

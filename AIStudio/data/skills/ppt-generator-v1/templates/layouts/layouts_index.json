@@ -1,0 +1,22 @@
+{
+  "卫宁健康-AI汇报": {
+    "label": "Weining Health AI Report Template",
+    "summary": "An AI-themed template for technology and data-related content, suitable for healthcare AI presentations",
+    "keywords": ["Weining Health", "AI", "Technology", "Data", "Healthcare"]
+  },
+  "卫宁健康-橘色": {
+    "label": "Weining Health Orange Template",
+    "summary": "An orange-themed template with vibrant and energetic visual style for healthcare presentations",
+    "keywords": ["Weining Health", "Orange", "Vibrant", "Energetic", "Healthcare"]
+  },
+  "卫宁健康-深蓝色": {
+    "label": "Weining Health Dark Blue Template",
+    "summary": "A dark blue-themed template with professional and stable visual style for healthcare presentations",
+    "keywords": ["Weining Health", "Dark blue", "Professional", "Stable", "Healthcare"]
+  },
+  "卫宁健康-暖调大地色": {
+    "label": "Weining Health Warm Earth Tone Template",
+    "summary": "A warm earth tone-themed template with natural and comfortable visual style for healthcare presentations",
+    "keywords": ["Weining Health", "Warm", "Earth Tone", "Natural", "Healthcare"]
+  }
+}

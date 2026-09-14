@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="topBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#BD1B01"/>
+      <stop offset="50%" stop-color="#D4A84B"/>
+      <stop offset="100%" stop-color="#BD1B01"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="1280" height="720" fill="#FDF8F3"/>
+  
+  <rect x="0" y="0" width="1280" height="8" fill="url(#topBar)"/>
+  
+  <rect x="60" y="80" width="6" height="40" fill="#D4A84B"/>
+  
+  <text x="85" y="110" fill="#BD1B01" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="32" font-weight="bold">目录</text>
+  
+  <!-- Left column -->
+  <text x="80" y="250" fill="#BD1B01" fill-opacity="0.15" font-family="Arial, sans-serif" font-size="72" font-weight="bold">01</text>
+  <rect x="175" y="210" width="4" height="40" fill="#D4A84B"/>
+  <text x="195" y="225" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="bold">{{TOC_ITEM_1_TITLE}}</text>
+  <text x="195" y="250" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif" font-size="13">{{TOC_ITEM_1_DESC}}</text>
+  
+  <text x="80" y="370" fill="#BD1B01" fill-opacity="0.15" font-family="Arial, sans-serif" font-size="72" font-weight="bold">03</text>
+  <rect x="175" y="330" width="4" height="40" fill="#D4A84B"/>
+  <text x="195" y="345" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="bold">{{TOC_ITEM_3_TITLE}}</text>
+  <text x="195" y="370" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif" font-size="13">{{TOC_ITEM_3_DESC}}</text>
+  
+  <text x="80" y="490" fill="#BD1B01" fill-opacity="0.15" font-family="Arial, sans-serif" font-size="72" font-weight="bold">05</text>
+  <rect x="175" y="450" width="4" height="40" fill="#D4A84B"/>
+  <text x="195" y="465" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="bold">{{TOC_ITEM_5_TITLE}}</text>
+  <text x="195" y="490" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif" font-size="13">{{TOC_ITEM_5_DESC}}</text>
+  
+  <!-- Right column -->
+  <text x="680" y="250" fill="#BD1B01" fill-opacity="0.15" font-family="Arial, sans-serif" font-size="72" font-weight="bold">02</text>
+  <rect x="775" y="210" width="4" height="40" fill="#D4A84B"/>
+  <text x="795" y="225" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="bold">{{TOC_ITEM_2_TITLE}}</text>
+  <text x="795" y="250" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif" font-size="13">{{TOC_ITEM_2_DESC}}</text>
+  
+  <text x="680" y="370" fill="#BD1B01" fill-opacity="0.15" font-family="Arial, sans-serif" font-size="72" font-weight="bold">04</text>
+  <rect x="775" y="330" width="4" height="40" fill="#D4A84B"/>
+  <text x="795" y="345" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="bold">{{TOC_ITEM_4_TITLE}}</text>
+  <text x="795" y="370" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif" font-size="13">{{TOC_ITEM_4_DESC}}</text>
+  
+  <text x="680" y="490" fill="#BD1B01" fill-opacity="0.15" font-family="Arial, sans-serif" font-size="72" font-weight="bold">06</text>
+  <rect x="775" y="450" width="4" height="40" fill="#D4A84B"/>
+  <text x="795" y="465" fill="#333333" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="bold">{{TOC_ITEM_6_TITLE}}</text>
+  <text x="795" y="490" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif" font-size="13">{{TOC_ITEM_6_DESC}}</text>
+</svg>

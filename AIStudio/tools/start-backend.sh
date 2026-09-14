@@ -31,9 +31,9 @@ if [ "$1" = "--build" ]; then
   # 报 ClassNotFoundException: org.codehaus.plexus.classworlds.launcher.Launcher。改用 cygpath 转换。
   CWJAR=$(cygpath -w "$(ls "$ROOT/tools/apache-maven-3.9.16/boot/"plexus-classworlds-*.jar | head -1)")
   ( cd "$ROOT/backend" && "$JAVA_HOME/bin/java.exe" -classpath "$CWJAR" \
-    "-Dclassworlds.conf=F:/kjl-study/AIStudio/tools/apache-maven-3.9.16/bin/m2.conf" \
-    "-Dmaven.home=F:/kjl-study/AIStudio/tools/apache-maven-3.9.16" \
-    "-Dmaven.multiModuleProjectDirectory=F:/kjl-study/AIStudio/backend" \
+    "-Dclassworlds.conf=E:/KjlStudy/AI/kjl-study/AIStudio/tools/apache-maven-3.9.16/bin/m2.conf" \
+    "-Dmaven.home=E:/KjlStudy/AI/kjl-study/AIStudio/tools/apache-maven-3.9.16" \
+    "-Dmaven.multiModuleProjectDirectory=E:/KjlStudy/AI/kjl-study/AIStudio/backend" \
     org.codehaus.plexus.classworlds.launcher.Launcher -q -DskipTests package )
   echo "[start] 构建完成: $(ls -la "$JAR" | awk '{print $5, $6, $7, $8}')"
 fi

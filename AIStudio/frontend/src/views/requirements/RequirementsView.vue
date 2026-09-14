@@ -719,7 +719,7 @@ async function loadTab(key: string, opts?: { silent?: boolean; force?: boolean }
     tabLoading[key] = true
     try {
       const args = parseArgsText(cfg.argumentsText)
-      const raw = await mcpApi.callTool(cfg.serverId, cfg.toolName, args)
+      const raw = await mcpApi.callTool(cfg.serverId, cfg.toolName, args, !!opts?.force)
       const rows = extractArray(raw, cfg.resultPath)
       if (rows.length === 0 && raw && typeof raw === 'object' && 'raw' in raw) {
         ElMessage.warning(`「${tab.label}」MCP 工具未返回 JSON 数组，请在配置中调整「结果路径」`)

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="topBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#BD1B01"/>
+      <stop offset="50%" stop-color="#D4A84B"/>
+      <stop offset="100%" stop-color="#BD1B01"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="1280" height="720" fill="#FDF8F3"/>
+  
+  <rect x="0" y="0" width="1280" height="8" fill="url(#topBar)"/>
+  
+  <text x="640" y="180" text-anchor="middle" fill="#D4A84B" font-family="Arial, sans-serif" font-size="16" font-weight="bold" letter-spacing="4">CHAPTER</text>
+  
+  <text x="640" y="280" text-anchor="middle" fill="#333333" font-family="Arial, sans-serif" font-size="100" font-weight="bold">{{CHAPTER_NUM}}</text>
+  
+  <text x="640" y="380" text-anchor="middle" fill="#BD1B01" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="48" font-weight="bold">{{CHAPTER_TITLE}}</text>
+  
+  <rect x="540" y="420" width="200" height="3" fill="#D4A84B"/>
+  
+  <text x="640" y="470" text-anchor="middle" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18">{{CHAPTER_DESC}}</text>
+</svg>

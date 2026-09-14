@@ -45,22 +45,36 @@ public class WbsSyncService {
 
     private final ObjectMapper om = new ObjectMapper();
 
-    /** 解析 kdocs-cli 可执行文件路径 */
-    private String resolveCli() {
+    /** 解析 kdocs-cli 启动命令前缀（支持 exe / cmd 包装 / js 垫片三种形态） */
+    private List<String> resolveCliCommand() {
         String env = System.getenv("KDOCS_CLI");
-        if (env != null && !env.isBlank()) return env;
+        if (env != null && !env.isBlank()) return wrapCli(env.trim());
         String localAppData = System.getenv("LOCALAPPDATA");
         if (localAppData != null) {
-            java.io.File f = new java.io.File(localAppData, "kdocs-cli/kdocs-cli.exe");
-            if (f.exists()) return f.getAbsolutePath();
+            for (String name : List.of("kdocs-cli.exe", "kdocs-cli.cmd", "kdocs-cli.js")) {
+                java.io.File f = new java.io.File(localAppData, "kdocs-cli/" + name);
+                if (f.exists()) return wrapCli(f.getAbsolutePath());
+            }
         }
         for (String dir : System.getenv("PATH").split(";")) {
-            java.io.File f = new java.io.File(dir.trim(), "kdocs-cli.exe");
-            if (f.exists()) return f.getAbsolutePath();
-            java.io.File f2 = new java.io.File(dir.trim(), "kdocs-cli");
-            if (f2.exists()) return f2.getAbsolutePath();
+            if (dir == null || dir.isBlank()) continue;
+            for (String name : List.of("kdocs-cli.exe", "kdocs-cli.cmd", "kdocs-cli.js")) {
+                java.io.File f = new java.io.File(dir.trim(), name);
+                if (f.exists()) return wrapCli(f.getAbsolutePath());
+            }
         }
-        return "kdocs-cli";
+        // 兜底裸名交给 CreateProcess 时会报晦涩的 error=2，这里直接给出可操作的提示
+        throw new IllegalStateException(
+                "本机未找到 kdocs-cli（查找顺序：环境变量 KDOCS_CLI → %LOCALAPPDATA%\\kdocs-cli\\ → PATH）"
+                        + "：请安装 kdocs-cli（或 Node 垫片 kdocs-cli.js）并执行 auth login 完成授权后重试");
+    }
+
+    /** js 用 node 启动；cmd/bat 需经 cmd /c（CreateProcess 不能直接跑批处理）；exe 直接启动 */
+    private List<String> wrapCli(String path) {
+        String lower = path.toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".js")) return List.of("node", path);
+        if (lower.endsWith(".cmd") || lower.endsWith(".bat")) return List.of("cmd", "/c", path);
+        return List.of(path);
     }
 
     /** 调用 CLI 读取一段区域，返回 (row,col)->text 网格 */
@@ -75,8 +89,12 @@ public class WbsSyncService {
         params.put("sheetId", SHEET_ID);
         params.put("range", range);
 
-        ProcessBuilder pb = new ProcessBuilder(resolveCli(), "sheet", "get-range-data",
-                om.writeValueAsString(params), "--silent");
+        List<String> cmd = new ArrayList<>(resolveCliCommand());
+        cmd.add("sheet");
+        cmd.add("get-range-data");
+        cmd.add(om.writeValueAsString(params));
+        cmd.add("--silent");
+        ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(false);
         Process proc = pb.start();
         StringBuilder out = new StringBuilder();
@@ -98,7 +116,7 @@ public class WbsSyncService {
         // 显式错误码（如 400006 鉴权失败）
         if (root.path("code").asInt(0) != 0) {
             throw new IllegalStateException(root.path("code").asInt() == 400006
-                    ? "金山文档 Token 已失效，请在本机执行 kdocs-cli auth login 重新授权"
+                    ? "金山文档 Token 未配置或已失效，请在本机执行 kdocs-cli auth login 重新授权"
                     : "kdocs-cli 返回错误码 " + root.path("code").asInt() + "：" + snippet(out.toString()));
         }
         JsonNode cells = root.path("detail").path("rangeData");

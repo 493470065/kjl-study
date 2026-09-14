@@ -39,6 +39,11 @@ public class TfsBridgeService {
 
     /** 调用 MCP 工具并解析为 JSON；失败抛 TfsBridgeException（message 可透传前端） */
     public JsonNode callToolJson(String toolName, Map<String, Object> args) {
+        return callToolJson(toolName, args, false);
+    }
+
+    /** forceRefresh=true（需求看板「刷新」按钮）：透传到底层跳过 120s 调用缓存 */
+    public JsonNode callToolJson(String toolName, Map<String, Object> args, boolean forceRefresh) {
         McpServerEntity server;
         try {
             server = mcpServerService.getServerByName(mcpServerName);
@@ -49,7 +54,7 @@ public class TfsBridgeService {
         }
         String raw;
         try {
-            raw = mcpServerService.callTool(server.getId(), toolName, args);
+            raw = mcpServerService.callTool(server.getId(), toolName, args, forceRefresh);
         } catch (Exception e) {
             throw new TfsBridgeException("TFS 工具调用失败(" + toolName + "): " + e.getMessage(), e);
         }

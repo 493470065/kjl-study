@@ -120,7 +120,8 @@ public class TfsBridgeController {
                                                 java.util.function.Supplier<JsonNode> fetcher) {
         QueryCache c = queryCache.get(cacheKey);
         long age = c == null ? Long.MAX_VALUE : System.currentTimeMillis() - c.ts;
-        if (c != null && age < FRESH_TTL_MS) {
+        // forceRefresh（「刷新」按钮）必须优先于新鲜期判断，否则 5 分钟内强刷会被缓存拦截而"无效"
+        if (c != null && !forceRefresh && age < FRESH_TTL_MS) {
             return ResponseEntity.ok(c.body);
         }
         if (c != null && !forceRefresh) {

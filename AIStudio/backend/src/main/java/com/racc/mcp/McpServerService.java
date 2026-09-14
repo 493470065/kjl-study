@@ -16,10 +16,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -119,6 +121,11 @@ public class McpServerService {
      * 供 Agent 运行时路由使用；120 秒超时（外部系统查询可能较慢）。
      */
     public String callTool(Long id, String toolName, Map<String, Object> args) throws Exception {
+        return callTool(id, toolName, args, false);
+    }
+
+    /** forceRefresh=true：跳过缓存读取（底层临时进程调用本身无缓存，缓存只在 callToolJson 层） */
+    public String callTool(Long id, String toolName, Map<String, Object> args, boolean forceRefresh) throws Exception {
         McpServerEntity entity = getServer(id);
         // 参数清洗：纯数字字符串转数值（MCP 侧 schema 常要求 number）
         Map<String, Object> cleanArgs = new LinkedHashMap<>();
@@ -190,11 +197,18 @@ public class McpServerService {
      * 结果非 JSON 时返回 {"raw": "..."} 由调用方决定如何处理。
      */
     public JsonNode callToolJson(Long id, String toolName, Map<String, Object> args) {
+        return callToolJson(id, toolName, args, false);
+    }
+
+    /** forceRefresh=true（需求看板「刷新」按钮）：跳过缓存读取，取完最新数据后仍回写缓存 */
+    public JsonNode callToolJson(Long id, String toolName, Map<String, Object> args, boolean forceRefresh) {
         String cacheKey = id + "|" + toolName + "|" + stableArgs(args);
-        CallCache cached = callCache.get(cacheKey);
-        if (cached != null && System.currentTimeMillis() - cached.timestamp < CALL_CACHE_TTL_MS) {
-            log.debug("MCP 调用命中缓存: {}", cacheKey);
-            return cached.node;
+        if (!forceRefresh) {
+            CallCache cached = callCache.get(cacheKey);
+            if (cached != null && System.currentTimeMillis() - cached.timestamp < CALL_CACHE_TTL_MS) {
+                log.debug("MCP 调用命中缓存: {}", cacheKey);
+                return cached.node;
+            }
         }
         String raw;
         try {
@@ -332,34 +346,84 @@ public class McpServerService {
 
     @Transactional
     public McpServerEntity uploadServer(String name, MultipartFile file, String displayName, String description) {
-        // 解压到 mcp 目录
-        String baseDir = mcpDir + File.separator + name;
-        File targetDir = new File(baseDir);
-        if (!targetDir.exists()) {
-            targetDir.mkdirs();
+        // 同名已存在时给出明确错误（DB name 唯一约束直接撞会变成 500 Internal Server Error）
+        if (repository.findByName(name).isPresent()) {
+            throw new IllegalArgumentException("MCP Server 名称已存在: " + name + "，请换一个名称或先删除旧的");
         }
 
-        try (ZipInputStream zis = new ZipInputStream(file.getInputStream())) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                Path entryPath = targetDir.toPath().resolve(entry.getName()).normalize();
-                if (!entryPath.startsWith(targetDir.toPath())) {
-                    throw new RuntimeException("ZIP 路径越界: " + entry.getName());
+        // 名称仅允许字母/数字/-/_，作为目录名防路径注入；显示名可任意
+        if (!name.matches("[A-Za-z0-9_-]+")) {
+            throw new IllegalArgumentException("MCP Server 名称仅允许字母、数字、中划线、下划线: " + name);
+        }
+
+        // 解压到临时目录（同目录已存在旧解压残留时先清理，避免 Files.copy 撞 FileAlreadyExistsException）
+        Path baseDir = Paths.get(mcpDir, name);
+        Path tmpDir = Paths.get(mcpDir, name + "-uploading-" + System.currentTimeMillis());
+        if (Files.exists(tmpDir)) {
+            deleteDirectoryRecursively(tmpDir);
+        }
+        try {
+            Files.createDirectories(tmpDir);
+
+            // 兼容两层压缩包结构：Windows 右键压缩常把文件包在顶层文件夹里，
+            // 先整体解压到临时目录，若只有唯一顶层目录则下钻一层
+            Charset zipCharset = Charset.forName("GBK"); // Windows 压缩包默认 GBK 文件名编码，UTF-8 乱码会导致解压异常
+            try (ZipInputStream zis = new ZipInputStream(file.getInputStream(), zipCharset)) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    Path entryPath = tmpDir.resolve(entry.getName()).normalize();
+                    if (!entryPath.startsWith(tmpDir)) {
+                        throw new IllegalArgumentException("ZIP 路径越界: " + entry.getName());
+                    }
+                    if (entry.isDirectory()) {
+                        Files.createDirectories(entryPath);
+                    } else {
+                        Files.createDirectories(entryPath.getParent());
+                        Files.copy(zis, entryPath, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    zis.closeEntry();
                 }
-                if (entry.isDirectory()) {
-                    entryPath.toFile().mkdirs();
-                } else {
-                    entryPath.getParent().toFile().mkdirs();
-                    Files.copy(zis, entryPath);
-                }
-                zis.closeEntry();
             }
+
+            // 唯一顶层目录时下钻（Windows 右键"压缩"的经典结构）
+            File tmpDirFile = tmpDir.toFile();
+            File[] topItems = tmpDirFile.listFiles();
+            if (topItems != null && topItems.length == 1 && topItems[0].isDirectory()) {
+                File top = topItems[0];
+                File flattenMark = new File(tmpDirFile, "_flatten_tmp");
+                Files.createDirectories(flattenMark.toPath());
+                File[] inner = top.listFiles();
+                if (inner != null) {
+                    for (File f : inner) {
+                        Files.move(f.toPath(), flattenMark.toPath().resolve(f.getName()),
+                                StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+                deleteDirectoryRecursively(top.toPath());
+                File[] flattened = flattenMark.listFiles();
+                if (flattened != null) {
+                    for (File f : flattened) {
+                        Files.move(f.toPath(), tmpDir.resolve(f.getName()), StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+                deleteDirectoryRecursively(flattenMark.toPath());
+            }
+
+            // 目标目录若存在旧残留（上次上传失败留下的半包），清掉再落位
+            if (Files.exists(baseDir)) {
+                deleteDirectoryRecursively(baseDir);
+            }
+            Files.move(tmpDir, baseDir);
+        } catch (IllegalArgumentException e) {
+            deleteDirectoryRecursively(tmpDir);
+            throw e;
         } catch (IOException e) {
+            deleteDirectoryRecursively(tmpDir);
             throw new RuntimeException("解压 ZIP 失败: " + e.getMessage(), e);
         }
 
         // 查找可执行入口（优先 package.json / index.js / server.py / main.py）
-        String command = detectCommand(targetDir);
+        String command = detectCommand(baseDir.toFile());
         String args = "";
 
         McpServerEntity entity = new McpServerEntity();
@@ -368,12 +432,35 @@ public class McpServerService {
         entity.setDescription(description);
         entity.setCommand(command);
         entity.setArgs(args);
-        entity.setWorkDir(targetDir.getAbsolutePath());
+        entity.setWorkDir(baseDir.toAbsolutePath().toString());
         entity.setStatus("STOPPED");
         entity.setToolCount(0);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
-        return repository.save(entity);
+        try {
+            return repository.save(entity);
+        } catch (RuntimeException e) {
+            // 落库失败（如并发下同名插入撞唯一约束）时回滚已解压目录，避免残留
+            deleteDirectoryRecursively(baseDir);
+            throw e;
+        }
+    }
+
+    /** 递归删除目录（仅用于 mcp 上传目录清理；不存在时静默返回） */
+    private void deleteDirectoryRecursively(Path dir) {
+        if (dir == null || !Files.exists(dir)) {
+            return;
+        }
+        try (var walk = Files.walk(dir)) {
+            walk.sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {
+                        }
+                    });
+        } catch (IOException ignored) {
+        }
     }
 
     @Transactional

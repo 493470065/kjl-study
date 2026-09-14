@@ -271,7 +271,11 @@ const configFormRef = ref<FormInstance>()
 // 合并文件字段进表单模型，统一走 :rules 校验
 const uploadFormModel = computed(() => ({ ...uploadForm.value, file: uploadFile.value }))
 const uploadRules: FormRules = {
-  name: [{ required: true, message: '请填写名称', trigger: 'blur' }],
+  name: [
+    { required: true, message: '请填写名称', trigger: 'blur' },
+    // 与后端目录名规则一致：仅字母/数字/-/_（后端会校验并拒绝其他字符）
+    { pattern: /^[A-Za-z0-9_-]+$/, message: '仅允许字母、数字、中划线、下划线', trigger: 'blur' }
+  ],
   file: [{
     validator: (_rule: any, value: any, callback: any) => {
       if (!value) callback(new Error('请选择 ZIP 文件'))
@@ -344,7 +348,7 @@ async function handleUpload() {
     uploadFile.value = null
     await loadServers()
   } catch (e: any) {
-    const msg = e?.response?.data?.error || e?.message || '上传失败'
+    const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message || '上传失败'
     ElMessage.error(msg)
   } finally {
     uploading.value = false
