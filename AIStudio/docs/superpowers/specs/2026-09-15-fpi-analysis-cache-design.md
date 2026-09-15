@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS `fpi_analysis_result` (
 - `data_fingerprint`：分析成功时对当次工单明细计算的指纹（算法见 §4）
 - `fp_snapshot`：当次传给技能的 `fp` 对象 JSON 快照（用于过期横幅对比工单数变化）
 
-**迁移脚本**：`db/03_migrations/001_add_fpi_analysis_result.sql`（幂等 `CREATE TABLE IF NOT EXISTS`），与代码同一 commit 提交；`01_schema.sql` 同步补齐该表（新机器从零部署直接可用）。
+**迁移脚本**：`db/03_migrations/001_add_fpi_analysis_result.sql`（幂等 `CREATE TABLE IF NOT EXISTS`；该目录当前为空，此为首支脚本，编号从 001 起），与代码同一 commit 提交；`01_schema.sql` 同步补齐该表（新机器从零部署直接可用）。
 
 ## 3. 后端 API（新模块 `com.racc.fpianalysis`）
 
@@ -72,8 +72,10 @@ function calcFingerprint(items: FpiWorkItemRef[]): string
 // items 各工单 id 升序拼接 → 简单字符串 hash（djb2）→ "n{数量}h{hash}"
 ```
 
-- 指纹输入 = `analysisReqItems(row).concat(analysisSoftItems(row))` 的工单 id 集合（含各 id 前数量），工单增减/变更即变化
+- 指纹输入 = `analysisReqItems(row).concat(analysisSoftItems(row))` 的工单 id 集合，工单增减/变更即变化
 - 分析成功保存时计算并存 `dataFingerprint`；打开抽屉时对当前数据重新计算并对比
+- 过期横幅中的「工单 {old}→{new}」数量取自 `fp_snapshot.total`（旧）与 `row.total`（新）
+- `fp_snapshot.total` 缺失（异常数据）时只显示「归集数据已变化」，不显示具体数字
 
 ### 4.2 打开抽屉流程（`openFpiAnalysis` 改造）
 
@@ -137,7 +139,8 @@ fpiAnalysisApi = {
 | `_unmatched` 行 | 抽屉入口按钮本身只对非 `_unmatched` 行显示（`v-if="!row._unmatched"`），无需处理 |
 | 并发覆盖（两设备同时分析同一功能点） | 后写赢（upsert 语义），符合「最近一次」语义 |
 | 功能点编码变化（spec-code-rename） | 旧编码缓存自然失效成「未分析过」，无迁移需求 |
-| lineSkills 未配置该条线 | `row` 本身来自技能数据源，能打开抽屉必有条线上下文；`lineKey` 从 `activeLine`（当前条线状态）取值 |
+| lineSkills 未配置该条线 | `row` 本身来自技能数据源，能打开抽屉必有条线上下文；`lineKey` 从 `activeTab`（当前条线 Tab，`'inpatient'|'outpatient'|'emergency'`，见 `RequirementCollectView.vue:477`）取值 |
+| 缓存读取请求 | 使用 `silent: true` 标记（`http.ts:26` 支持该自定义配置），失败不出全局错误弹窗，走 §4.2 降级分支 |
 
 ## 6. 验收标准
 
