@@ -130,7 +130,12 @@
               <el-input v-model="filtersOf(lineKey).kw" placeholder="搜索编码 / 名称 / 模块" clearable style="width: 220px" @input="resetFpiPage(lineKey)">
                 <template #prefix><el-icon><Search /></el-icon></template>
               </el-input>
-              <el-button :disabled="!filtersOf(lineKey).fpi && !filtersOf(lineKey).kw.trim()" @click="resetFilters(lineKey)">
+              <el-button
+                :type="filtersOf(lineKey).onlyUnmatched ? 'warning' : ''"
+                :plain="!filtersOf(lineKey).onlyUnmatched"
+                @click="toggleUnmatched(lineKey)"
+              >只看未匹配（{{ unmatchedTableRows(lineKey).length }}）</el-button>
+              <el-button :disabled="!filtersOf(lineKey).fpi && !filtersOf(lineKey).kw.trim() && !filtersOf(lineKey).onlyUnmatched" @click="resetFilters(lineKey)">
                 <el-icon><RefreshLeft /></el-icon> 重置
               </el-button>
               <span class="filter-count">筛选出 {{ filteredFpiRows(lineKey).length }} 条（功能点 {{ skillRows(lineKey).length }} 个 + 未匹配工单 {{ unmatchedTableRows(lineKey).length }} 条）</span>
@@ -139,7 +144,12 @@
             <!-- FPI 明细表（功能点粒度，技能数据源，分页每页默认 20 条；列头排序在数据侧全量完成，sortable="custom"） -->
             <el-table :data="pagedFpiRows(lineKey)" :default-sort="sortStateOf(lineKey)" border size="small" @sort-change="(c: any) => onFpiSortChange(lineKey, c)">
               <el-table-column prop="code" label="功能点编码" width="170" show-overflow-tooltip />
-              <el-table-column prop="name" label="功能点名称" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="name" label="功能点名称 / 未匹配工单" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span v-if="row._unmatched" class="unmatched-title">{{ row._title || `#${(row.items?.[0]?.id) || '—'} ${row.items?.[0]?.title || ''}` }}</span>
+                  <template v-else>{{ row.name }}</template>
+                </template>
+              </el-table-column>
               <el-table-column prop="module" label="所属模块" width="120" show-overflow-tooltip />
               <el-table-column prop="total" label="工单数" width="85" align="right" sortable="custom" />
               <el-table-column prop="req" label="需求数" width="110" align="right" sortable="custom" />
@@ -463,6 +473,7 @@
       </el-tabs>
 
       <template #footer>
+        <el-button size="small" type="primary" plain :disabled="!fpiAnalysisRow" @click="exportFpiMd">导出 MD</el-button>
         <el-button size="small" :loading="fpiAnalyzing" :disabled="!fpiAnalysisRow" @click="runFpiAnalysis">重新分析</el-button>
         <el-button size="small" @click="fpiAnalysisVisible = false">关闭</el-button>
       </template>
@@ -927,6 +938,78 @@ function closeFpiAnalysis() {
   fpiAnalyzing.value = false
 }
 
+/** 导出功能点 MD 文档：基本信息 + 需求清单 + 软质清单 + 合理性设计分析报告（前端直接下载，BOM 编码防 Excel 乱码） */
+function exportFpiMd() {
+  const row = fpiAnalysisRow.value
+  if (!row) return
+  const reqItems = analysisReqItems(row)
+  const softItems = analysisSoftItems(row)
+  const esc = (s: unknown) => String(s ?? '').replace(/\|/g, '／').replace(/\n/g, ' ')
+  const fmtItems = (arr: FpiWorkItemRef[]) => arr.length
+    ? arr.map((i, n) => `| ${n + 1} | ${i.id} | ${esc(i.title)} | ${i.state || '—'} | ${(i.createdDate || '').slice(0, 10) || '—'} |`).join('\n')
+    : '| — | — | 暂无数据（旧缓存无工单明细，手动刷新归集后展示） | — | — |'
+  const levelLabel = row.level
+    ? FPI_LEVEL_META[row.level].label
+    : '未定级' + (row.sampleInsufficient ? '（样本不足，默认按健康登记）' : '')
+
+  // 合理性设计分析报告：取当前抽屉展示的缓存/最新分析正文（提示语开头的横幅不算报告）
+  const rawText = (fpiAnalysisText.value || '').trim()
+  const isBanner = rawText.startsWith('>')
+  const reportBody = !isBanner && rawText ? rawText.replace(/^# [^\n]*\n/, '').trim() : ''
+  const today = new Date()
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const fileDate = dateStr.replace(/-/g, '')
+
+  const md = `# 功能点健康度分析文档：${row.name}
+
+> **产出说明**：本档为「需求归集 → ${lineLabel(String(activeTab.value))} → 功能点健康度」功能点的单点导出文档，包含需求清单、软质清单、合理性设计分析报告三部分。
+> 生成时间：${dateStr}（需求/软质清单为当前归集数据；合理性设计报告为平台缓存分析结果）
+
+## 功能点基本信息
+
+| 项 | 值 |
+|---|---|
+| 功能点编码 | ${row.code || '无编码'} |
+| 功能点名称 | ${row.name} |
+| 所属模块 | ${row.module || '—'} |
+| 所属产品线 | ${lineLabel(String(activeTab.value))} |
+| 健康度等级 | ${levelLabel} |
+| FPI | ${row.fpi ?? '—'}${row.sampleInsufficient ? '（样本不足）' : ''} |
+| 独立需求数 | ${row.req ?? reqItems.length} |
+| 软质数 | ${row.soft ?? softItems.length} |
+| 趋势 | ${row.trendText || '—'} |
+
+---
+
+## 一、需求清单（功能性，共 ${reqItems.length} 条）
+
+| # | TFS ID | 标题 | 状态 | 提出日期 |
+|---|---|---|---|---|
+${fmtItems(reqItems)}
+
+## 二、软质清单（软件质量，共 ${softItems.length} 条）
+
+| # | TFS ID | 标题 | 状态 | 提出日期 |
+|---|---|---|---|---|
+${fmtItems(softItems)}
+
+---
+
+## 三、合理性设计分析报告
+${reportBody
+    ? `\n> 来源：平台合理性设计深挖${fpiCacheMeta.value?.skillName ? `（${fpiCacheMeta.value.skillName}）` : ''}${fpiCacheMeta.value?.updatedAt ? `，最近分析于 ${formatCacheTime(fpiCacheMeta.value.updatedAt)}` : ''}。\n\n${reportBody}\n`
+    : `\n> ⚠️ 平台缓存中暂无该功能点的合理性设计分析报告，请在本抽屉「合理性设计分析」页签执行分析后重新导出。\n`}`
+
+  const blob = new Blob(['\ufeff' + md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `功能点_${row.name}_${row.code || '无编码'}_${fileDate}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success(`已导出 MD（${(blob.size / 1024).toFixed(1)} KB）`)
+}
+
 function skillConfigured(lineKey: string | number): boolean {
   const s = lineSkills[String(lineKey)]
   if (!s) return false
@@ -1371,11 +1454,14 @@ function collectLinkIds(lineKey: string | number): number[] {
   }
   return [...ids]
 }
-function mergeConsolidateArgs(skillName: string, args: Record<string, any>, linkIds?: number[]): Record<string, any> {
+function mergeConsolidateArgs(skillName: string, args: Record<string, any>, linkIds?: number[], lineKey?: string): Record<string, any> {
   if (!/consolidate-requirements/i.test(skillName || '')) return args
-  if ('ids' in args || 'since' in args || 'md' in args || 'queryUrl' in args) return args
-  if (linkIds && linkIds.length) return { ...args, json: true, ids: linkIds }
-  return { ...args, json: true, since: '2025-01-01' }
+  const merged = { ...args }
+  // 条线参数自动注入：按 Tab 的 lineKey 传 line，保证技能功能点池只含本条线（防止 BLGL/MZBL 功能点混入急诊等跨条线污染）；用户显式配置 line/sys 时尊重配置
+  if (lineKey && !('line' in merged) && !('sys' in merged)) merged.line = lineKey
+  if ('ids' in merged || 'since' in merged || 'md' in merged || 'queryUrl' in merged) return merged
+  if (linkIds && linkIds.length) return { ...merged, json: true, ids: linkIds }
+  return { ...merged, json: true, since: '2025-01-01' }
 }
 
 /** 从技能返回值中取出记录数组：优先按 resultPath，其次识别常见包裹字段 */
@@ -1516,7 +1602,7 @@ async function testSkillCall() {
       // 平台技能：执行脚本
       const res = await skillApi.executeSkill(draftSkill.skillName.trim(), {
         entry: draftSkill.entry.trim() || undefined,
-        args: mergeConsolidateArgs(draftSkill.skillName.trim(), parseArgsText(draftSkill.argumentsText), collectLinkIds(editLine.value)),
+        args: mergeConsolidateArgs(draftSkill.skillName.trim(), parseArgsText(draftSkill.argumentsText), collectLinkIds(editLine.value), String(editLine.value || '')),
         timeoutMs: 180000
       })
       if (!res.success) {
@@ -1597,7 +1683,7 @@ async function fetchSkillFpi(lineKey: string) {
         : '未拉取到链接数据，回退技能全量口径（2025-01-01 起需求+软质）'
       const res = await skillApi.executeSkill(cfg.skillName, {
         entry: cfg.entry || undefined,
-        args: mergeConsolidateArgs(cfg.skillName, parseArgsText(cfg.argumentsText), linkIds),
+        args: mergeConsolidateArgs(cfg.skillName, parseArgsText(cfg.argumentsText), linkIds, lineKey),
         timeoutMs: 180000
       })
       if (!res.success) {
@@ -1766,7 +1852,7 @@ function a(lineKey: string | number): Analysis {
 }
 
 // ---- 实时筛选（按条线独立） ----
-interface ItemFilter { fpi: FpiLevel | ''; kw: string }
+interface ItemFilter { fpi: FpiLevel | ''; kw: string; onlyUnmatched: boolean }
 // 列头排序状态（数据侧全量排序，再分页）：prop + asc/desc；null = 默认排序（等级→问题数→趋势）
 interface FpiSortState { prop: string; order: 'asc' | 'desc' | null }
 const fpiSorts = reactive<Record<string, FpiSortState>>({})
@@ -1801,7 +1887,7 @@ function defaultFpiCompare(x: FpiSkillRow, y: FpiSkillRow): number {
   if (total !== 0) return total
   return (y.trendPct ?? -Infinity) - (x.trendPct ?? -Infinity)
 }
-function emptyFilter(): ItemFilter { return { fpi: '', kw: '' } }
+function emptyFilter(): ItemFilter { return { fpi: '', kw: '', onlyUnmatched: false } }
 const filters = reactive<Record<string, ItemFilter>>({ inpatient: emptyFilter(), outpatient: emptyFilter(), emergency: emptyFilter() })
 
 function filtersOf(lineKey: string | number): ItemFilter {
@@ -1813,6 +1899,14 @@ function filtersOf(lineKey: string | number): ItemFilter {
 function toggleFpiFilter(lineKey: string | number, level: FpiLevel) {
   const f = filtersOf(lineKey)
   f.fpi = f.fpi === level ? '' : level
+  resetFpiPage(lineKey)
+}
+
+/** 只看未匹配工单：与等级筛选互斥（未匹配行无等级） */
+function toggleUnmatched(lineKey: string | number) {
+  const f = filtersOf(lineKey)
+  f.onlyUnmatched = !f.onlyUnmatched
+  if (f.onlyUnmatched) f.fpi = ''
   resetFpiPage(lineKey)
 }
 
@@ -1845,7 +1939,9 @@ function unmatchedTableRows(lineKey: string | number): FpiSkillRow[] {
 function filteredFpiRows(lineKey: string | number): FpiSkillRow[] {
   const f = filtersOf(lineKey)
   const kw = f.kw.trim().toLowerCase()
-  const filtered = [...skillRows(lineKey), ...unmatchedTableRows(lineKey)].filter(r => {
+  // 只看未匹配：跳过功能点行，仅保留未匹配工单行
+  const pool = f.onlyUnmatched ? unmatchedTableRows(lineKey) : [...skillRows(lineKey), ...unmatchedTableRows(lineKey)]
+  const filtered = pool.filter(r => {
     if (f.fpi && r.level !== f.fpi) return false // 未匹配行无等级，等级筛选时自动排除
     if (kw && !(`${r.code} ${r.name} ${r.module} ${r._title || ''}`.toLowerCase().includes(kw))) return false
     return true
@@ -2029,6 +2125,8 @@ function resetFilters(lineKey: string | number) {
 /* ---- 筛选栏 ---- */
 .filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .filter-count { font-size: 12px; color: #909399; }
+/* 未匹配工单行：功能点名称列渲染工单标题（琥珀色与「未匹配」标签呼应） */
+.unmatched-title { color: #b45309; font-weight: 500; }
 
 /* ---- 模块量级条 ---- */
 .bar-wrap { display: flex; align-items: center; gap: 8px; }
