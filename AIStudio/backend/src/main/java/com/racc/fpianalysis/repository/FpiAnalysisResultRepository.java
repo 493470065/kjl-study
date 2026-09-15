@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface FpiAnalysisResultRepository extends JpaRepository<FpiAnalysisResultEntity, Long> {
     Optional<FpiAnalysisResultEntity> findByUserIdAndLineKeyAndFpCode(Long userId, String lineKey, String fpCode);
+
+    void deleteByUserIdAndLineKeyAndFpCode(Long userId, String lineKey, String fpCode);
 }
