@@ -230,6 +230,13 @@ public class MlDocsSyncService {
         return List.of(path);
     }
 
+    /** 组合 CLI 启动命令前缀与子命令参数（JSON 载荷经 stdin 传入，见 runCli） */
+    private List<String> withArgs(String... args) {
+        List<String> cmd = new ArrayList<>(resolveCliCommand());
+        cmd.addAll(List.of(args));
+        return cmd;
+    }
+
     /**
      * 调用 CLI 并解析 JSON 输出（code!=0 抛异常）。
      * JSON 参数经 stdin 传入：Windows 进程传参会剥掉内联 JSON 的双引号导致 CLI 解析失败。

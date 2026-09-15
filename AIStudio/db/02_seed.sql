@@ -67,3 +67,8 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
+
+-- ============ MCP Server 注册（2026-09-15 补录：数据库重建后 MCP 注册会丢失） ============
+-- work_dir 为本机安装路径，新电脑部署后若路径不同请在 MCP管理 中编辑
+INSERT INTO `mcp_servers` (`id`, `args`, `command`, `created_at`, `description`, `display_name`, `env_vars`, `name`, `status`, `tool_count`, `updated_at`, `work_dir`) VALUES
+(2, 'index.js', 'node', '2026-09-15 07:17:57.994656', 'TFS 2018 MCP Server for 卫宁健康 WINNING-6.0（需求/工单/知识库查询）', 'TFS 查询 (WiNEX)', '{}', 'tfs-query-winex', 'STOPPED', 11, '2026-09-15 07:18:07.0310074', 'F:/kjl-study/AIStudio/data/mcp/tfs-query-winex');
