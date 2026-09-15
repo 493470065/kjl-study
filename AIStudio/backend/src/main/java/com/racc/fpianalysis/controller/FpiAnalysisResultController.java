@@ -37,7 +37,10 @@ public class FpiAnalysisResultController {
         if (userId == null) return ResponseEntity.status(401).body(Map.of("error", "未登录"));
         try {
             FpiAnalysisResultEntity e = service.get(userId, lineKey, fpCode);
-            return ResponseEntity.ok(Map.of("value", toDto(e)));
+            // Map.of 不允许 null 值：value 为 null 时用 HashMap 承载（无记录 → {"value":null}）
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("value", toDto(e));
+            return ResponseEntity.ok(body);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
