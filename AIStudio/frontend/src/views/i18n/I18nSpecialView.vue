@@ -286,6 +286,38 @@
           <el-table-column prop="password" label="密码" width="140" />
         </el-table>
       </el-tab-pane>
+
+      <!-- ==================== Tab 6: 成果演示 ==================== -->
+      <el-tab-pane label="成果演示" name="demo">
+        <div class="ml-toolbar">
+          <el-button type="primary" size="small" @click="openDemoDialog()">
+            <el-icon><Plus /></el-icon> 新增演示项
+          </el-button>
+          <span class="ml-toolbar__tip">口径：多语专项对外演示的素材与入口（视频回放 / 演示环境 / 演示脚本），点击卡片跳转打开。</span>
+        </div>
+        <div v-if="demos.length" class="ml-docs">
+          <div v-for="d in demos" :key="d.id" class="ml-doc" @click="openUrl(d.url)">
+            <div class="ml-doc__title">
+              <el-tag size="small" effect="plain" type="warning">{{ d.type }}</el-tag>
+              <span>{{ d.name }}</span>
+            </div>
+            <div class="ml-doc__desc">{{ d.summary || '（未填写说明）' }}</div>
+            <div class="ml-doc__ops">
+              <span class="ml-doc__link">{{ d.url || '（未填写链接）' }}</span>
+              <span class="ml-doc__btns" @click.stop>
+                <el-button link type="primary" size="small" @click="openDemoDialog(d)">编辑</el-button>
+                <el-popconfirm title="确认删除该演示项？" confirm-button-text="删除" cancel-button-text="取消"
+                               @confirm="removeDemo(d.id)">
+                  <template #reference>
+                    <el-button link type="danger" size="small">删除</el-button>
+                  </template>
+                </el-popconfirm>
+              </span>
+            </div>
+          </div>
+        </div>
+        <el-empty v-else description="暂无演示项，点击「新增演示项」添加视频回放、演示环境或演示脚本" />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- ===== 里程碑编辑弹窗 ===== -->
@@ -372,6 +404,30 @@
         <el-button type="primary" @click="submitDoc">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- ===== 演示项编辑弹窗 ===== -->
+    <el-dialog v-model="demoDialogVisible" :title="demoForm.id ? '编辑演示项' : '新增演示项'" width="520px">
+      <el-form :model="demoForm" label-width="72px">
+        <el-form-item label="类型" required>
+          <el-select v-model="demoForm.type" style="width: 100%">
+            <el-option v-for="t in DEMO_TYPES" :key="t" :label="t" :value="t" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="名称" required>
+          <el-input v-model="demoForm.name" placeholder="如：多语界面切换演示" />
+        </el-form-item>
+        <el-form-item label="链接">
+          <el-input v-model="demoForm.url" placeholder="视频回放 / 演示环境地址 / 脚本文档链接" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="demoForm.summary" type="textarea" :rows="3" placeholder="演示内容、使用口径与注意事项（如使用哪个测试账号）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="demoDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitDemo">保存</el-button>
+      </template>
+    </el-dialog>
   </page-container>
 </template>
 
@@ -440,6 +496,14 @@ const ENV = {
 
 // ==================== 数据模型与持久化 ====================
 
+/** 成果演示预置（首次打开自动播种，可在界面增删改） */
+const DEMO_TYPES = ['演示视频', '演示环境', '演示脚本', '演示页面', '其他']
+const DEMO_SEEDS: Omit<DemoItem, 'id'>[] = [
+  { type: '演示环境', name: 'WiNEX Portal 多语演示环境', url: ENV.portalUrl, summary: `${ENV.hospital}，登录后切换语言可演示多语界面；测试账号见「环境与账号」页签（如 WN006 临床医生）。` },
+  { type: '演示视频', name: '多语方案宣讲会录制', url: 'https://meeting.tencent.com/crm/2Gv6vw188b', summary: '2026-08-07 多语方案宣讲会录制回放，可作为专项背景介绍素材。' },
+  { type: '演示环境', name: '交付平台', url: ENV.deliverUrl, summary: '多语交付平台演示入口，数据流转口径配套「重要文档-多语数据资源流转说明图」。' }
+]
+
 interface Milestone {
   id: string; name: string; phase: string
   planStart?: string; planEnd?: string
@@ -450,6 +514,7 @@ interface Milestone {
 }
 interface WeekItem { id: string; title: string; dateFrom?: string; dateTo?: string; content: string }
 interface DocItem { id: string; name: string; url: string; summary?: string }
+interface DemoItem { id: string; type: string; name: string; url?: string; summary?: string }
 interface AiEval { stage: string; type?: 'light' | 'full'; at: string; result: string }
 
 const MS_STATUS = ['未开始', '进行中', '已完成', '已延期']
@@ -464,6 +529,7 @@ const activeTab = ref('milestones')
 const milestones = ref<Milestone[]>([])
 const weeks = ref<WeekItem[]>([])
 const docs = ref<DocItem[]>([])
+const demos = ref<DemoItem[]>([])
 
 // ---- WBS 种子：来源「多语专项各条线任务跟踪表」- 公共技术中心WBS（2026-09-06 同步） ----
 const WBS_L1: Milestone[] = [
@@ -801,6 +867,29 @@ async function removeDoc(id: string) {
   await persist()
 }
 
+// ==================== 成果演示 CRUD ====================
+
+const demoDialogVisible = ref(false)
+const demoForm = reactive<DemoItem>({ id: '', type: '演示视频', name: '', url: '', summary: '' })
+
+function openDemoDialog(d?: DemoItem) {
+  Object.assign(demoForm, d ? { ...d } : { id: '', type: '演示视频', name: '', url: '', summary: '' })
+  demoDialogVisible.value = true
+}
+async function submitDemo() {
+  if (!demoForm.name.trim()) { ElMessage.warning('请填写名称'); return }
+  const item: DemoItem = { ...demoForm, id: demoForm.id || `demo-${Date.now()}`, name: demoForm.name.trim(), url: demoForm.url.trim() }
+  const idx = demos.value.findIndex(x => x.id === item.id)
+  if (idx >= 0) demos.value[idx] = item
+  else demos.value.push(item)
+  demoDialogVisible.value = false
+  await persist()
+}
+async function removeDemo(id: string) {
+  demos.value = demos.value.filter(x => x.id !== id)
+  await persist()
+}
+
 // ==================== 里程碑 AI 阶段评估（甘特图列） ====================
 
 function formatNow(): string {
@@ -982,6 +1071,7 @@ async function persist() {
       journalApi.save(SCOPE, 'milestones', milestones.value),
       journalApi.save(SCOPE, 'weeks', weeks.value),
       journalApi.save(SCOPE, 'docs', docs.value),
+      journalApi.save(SCOPE, 'demos', demos.value),
       journalApi.save(SCOPE, 'ms-evals', msEvals.value),
       journalApi.save(SCOPE, 'settings', { ...settings })
     ])
@@ -1014,6 +1104,7 @@ onMounted(async () => {
       ? persisted
       : [...MILESTONE_SEEDS]
     docs.value = Array.isArray(data.docs) && data.docs.length ? data.docs : DOC_SEEDS.map(d => ({ id: `doc-${d.url.slice(-12)}`, ...d }))
+    demos.value = Array.isArray(data.demos) && data.demos.length ? data.demos : DEMO_SEEDS.map(d => ({ id: `demo-${d.name.slice(0, 6)}-${d.url?.slice(-8) || ''}`, ...d }))
     weeks.value = Array.isArray(data.weeks) ? data.weeks : []
     msEvals.value = Array.isArray(data['ms-evals']) ? data['ms-evals'] : []
     if (data.settings && typeof data.settings === 'object' && data.settings.evalAgent) {
@@ -1023,6 +1114,7 @@ onMounted(async () => {
     milestones.value = [...MILESTONE_SEEDS]
     msEvals.value = []
     docs.value = DOC_SEEDS.map(d => ({ id: `doc-${d.url.slice(-12)}`, ...d }))
+    demos.value = DEMO_SEEDS.map(d => ({ id: `demo-${d.name.slice(0, 6)}-${d.url?.slice(-8) || ''}`, ...d }))
   }
   // 加载可用的 Agent 列表（评估 Agent 下拉）
   loadAgentOptions()
