@@ -808,4 +808,5 @@ CREATE TABLE `fpi_analysis_result` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_fpi_result` (`user_id`,`line_key`,`fp_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
