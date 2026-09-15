@@ -390,6 +390,16 @@
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="合理性设计分析" name="analysis">
+          <div v-if="fpiCacheMeta" class="fpi-cache-bar">
+            <span class="fpi-cache-info">
+              🕑 最近分析：{{ formatCacheTime(fpiCacheMeta.updatedAt) }}<template v-if="fpiCacheMeta.skillName"> · 技能 {{ fpiCacheMeta.skillName }}</template><template v-if="fpiCacheMeta.execDurationMs"> · 耗时 {{ (fpiCacheMeta.execDurationMs / 1000).toFixed(1) }}s</template><template v-if="fpiCacheSaving"> · <span class="fpi-cache-saving">保存中…</span></template>
+            </span>
+            <el-alert
+              v-if="fpiCacheStale" type="warning" :closable="false" show-icon
+              title="归集数据已变化，以下结果可能过期"
+              :description="staleBannerText"
+            />
+          </div>
           <div class="ana-cfg-bar">
             <el-select v-model="anaCfg.skillName" filterable clearable placeholder="选择分析技能（平台技能）" style="width: 250px" @change="persistAnaCfg">
               <el-option v-for="s in platformSkills" :key="s.name" :label="s.name" :value="s.name" />
@@ -473,6 +483,7 @@ import { loadPref, savePref } from '@/utils/userPrefs'
 import { mcpApi, type McpServer, type McpToolInfo } from '@/api/mcp'
 import { useMarkdown } from '@/composables/useMarkdown'
 import { skillApi } from '@/api/skill'
+import { fpiAnalysisApi, type FpiAnalysisCache } from '@/api/fpiAnalysis'
 
 const activeTab = ref('inpatient')
 
@@ -595,6 +606,75 @@ const fpiAnalysisVisible = ref(false)
 const fpiAnalyzing = ref(false)
 const fpiAnalysisText = ref('')
 const fpiAnalysisRow = ref<FpiSkillRow | null>(null)
+
+// ---- 分析结果缓存（后端 fpi_analysis_result）：打开抽屉展示最近一次，仅人工执行才覆盖 ----
+interface FpiCacheMeta {
+  updatedAt: string | null   // ISO 字符串（后端 LocalDateTime.toString() 或前端 toISOString()）
+  skillName: string | null
+  execDurationMs: number | null
+  fingerprint: string | null
+  oldTotal: number | null    // 缓存时工单数（fpSnapshot.total），过期横幅展示 X→Y
+}
+const fpiCacheMeta = ref<FpiCacheMeta | null>(null)
+const fpiCacheStale = ref(false)      // 当前数据指纹与缓存不一致
+const fpiCacheSaving = ref(false)     // 落库中（小字提示用）
+
+const staleBannerText = computed(() => {
+  const meta = fpiCacheMeta.value
+  const row = fpiAnalysisRow.value
+  if (!meta || !row) return ''
+  if (meta.oldTotal != null && row.total != null && meta.oldTotal !== row.total) {
+    return `分析时工单 ${meta.oldTotal} 条，当前 ${row.total} 条。如需按最新数据重新评估，请点击「执行分析」。`
+  }
+  return '归集工单集合与分析时不同。如需按最新数据重新评估，请点击「执行分析」。'
+})
+
+function formatCacheTime(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** 当前功能点行的数据指纹：需求+软质工单 id 升序拼接 → djb2 hash，前缀带数量便于人工识别 */
+function calcFingerprint(row: FpiSkillRow): string {
+  const ids = analysisReqItems(row).concat(analysisSoftItems(row))
+    .map(x => String(x.id)).sort()
+  let h = 5381
+  for (const s of ids) { for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0 }
+  return `n${ids.length}h${h.toString(16)}`
+}
+
+/** 打开抽屉时读取后端缓存并渲染（不自动执行技能） */
+async function loadFpiCache(lineKey: string, row: FpiSkillRow) {
+  fpiCacheMeta.value = null
+  fpiCacheStale.value = false
+  if (!row.code) {
+    fpiAnalysisText.value = '> ⚠ 该功能点无编码，无法读取/保存分析缓存，可直接执行分析（结果不做持久化）。'
+    return
+  }
+  try {
+    const res = await fpiAnalysisApi.get(lineKey, row.code)
+    const v: FpiAnalysisCache | null | undefined = res?.value
+    if (!v || !v.resultMd) {
+      fpiAnalysisText.value = '> 尚未分析过。请在上方选择分析技能后点击「执行分析」，结果将自动保存并跨设备同步。'
+      return
+    }
+    fpiAnalysisText.value = v.resultMd
+    let oldTotal: number | null = null
+    if (v.fpSnapshot) {
+      try { oldTotal = JSON.parse(v.fpSnapshot)?.total ?? null } catch { /* 快照损坏按缺省 */ }
+    }
+    fpiCacheMeta.value = {
+      updatedAt: v.updatedAt, skillName: v.skillName,
+      execDurationMs: v.execDurationMs, fingerprint: v.dataFingerprint, oldTotal
+    }
+    fpiCacheStale.value = !!v.dataFingerprint && v.dataFingerprint !== calcFingerprint(row)
+  } catch {
+    fpiAnalysisText.value = '> 读取历史分析结果失败（后端不可达或未登录），可直接点击「执行分析」重新分析。'
+  }
+}
 
 // ===== 深挖报告结构化渲染（fpd-meta 数据块 → 卡片组件） =====
 interface FpiReportMeta {
@@ -765,8 +845,7 @@ function openFpiAnalysis(row: FpiSkillRow) {
   fpiAnalysisTab.value = 'analysis' // 打开时默认展示合理性设计分析
   fpiAnalysisVisible.value = true
   loadPlatformSkills()
-  if (anaCfg.skillName) runFpiAnalysis()
-  else fpiAnalysisText.value = '> 请先在上方选择用于合理性设计分析的平台技能，然后点击「执行分析」。'
+  loadFpiCache(String(activeTab.value), row)   // 展示最近一次缓存结果，不自动执行
 }
 
 // ===== 合理性设计对话框：需求/软件治理列表 =====
@@ -812,6 +891,26 @@ async function runFpiAnalysis() {
     }
     const out = (res.stdout || '').trim()
     fpiAnalysisText.value = out || '> ⚠ 技能未返回分析内容（stdout 为空，检查脚本输出）'
+    // 成功且非空 → 落库覆盖最近一次（失败仅提示，不影响本次展示）
+    if (out && row.code) {
+      fpiCacheSaving.value = true
+      const fingerprint = calcFingerprint(row)
+      fpiAnalysisApi.save(String(activeTab.value), row.code, {
+        fpName: row.name, skillName: anaCfg.skillName, resultMd: out,
+        dataFingerprint: fingerprint,
+        fpSnapshot: JSON.stringify(args.fp), execDurationMs: res.durationMs
+      }).then(() => {
+        fpiCacheMeta.value = {
+          updatedAt: new Date().toISOString(), skillName: anaCfg.skillName,
+          execDurationMs: res.durationMs, fingerprint,
+          oldTotal: row.total ?? null
+        }
+        fpiCacheStale.value = false
+      }).catch(err => {
+        console.warn('[reqcollect] 分析结果保存失败', err)
+        ElMessage({ message: '分析结果保存失败（本次展示不受影响）', type: 'warning', grouping: true })
+      }).finally(() => { fpiCacheSaving.value = false })
+    }
   } catch (e: any) {
     const msg = String(e?.response?.data?.error || e?.message || '未知错误')
     // 提示词型技能（只有 SKILL.md/references，无 scripts/ 入口）无法被平台执行器运行
@@ -1814,6 +1913,12 @@ function resetFilters(lineKey: string | number) {
 .fpi-analysis-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .wi-sec-title { font-size: 13px; font-weight: 600; color: #303133; margin: 14px 0 8px; }
 .ana-cfg-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.fpi-cache-bar { margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+.fpi-cache-info { font-size: 12px; color: #909399; }
+.fpi-cache-saving { color: #e6a23c; }
+.fpi-cache-bar :deep(.el-alert) { padding: 4px 12px; }
+.fpi-cache-bar :deep(.el-alert__title) { font-size: 12px; }
+.fpi-cache-bar :deep(.el-alert__description) { font-size: 12px; margin-top: 2px; }
 .fpi-analysis-body { margin-top: 8px; min-height: 80px; }
 
 /* ---- 深挖报告 Markdown 排版（:deep 穿透 v-html） ---- */
