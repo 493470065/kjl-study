@@ -17,6 +17,10 @@ AIStudio/data/skills/**/node_modules/
 AIStudio/data/skills/**/*.log
 AIStudio/data/skills/**/tmp/
 AIStudio/data/skills/**/.cache/
+# 技能生成脚本的临时/备份产物
+AIStudio/data/skills/**/*.bak-legacy
+AIStudio/data/skills/**/_tmp_*.json
+AIStudio/data/skills/**/latest-fp-codes.json
 
 # ===== 环境变量文件（含 API 密钥，不入库；参考对应的 .example 模板）=====
 AIStudio/tools/env.cmd

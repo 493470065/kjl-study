@@ -27,10 +27,11 @@ const { tfsModuleMap, keywordRules } = require(path.join(__dirname, '..', 'refer
 const { isBaselineRequirement } = require(path.join(__dirname, '..', 'references', 'external-rules.js'));
 
 // 合并需求识别正则
-// 覆盖两类命名习惯：
+// 覆盖三类命名习惯：
 //   A. 合并动作型：合并+连续数字(合并260330) / 合并需求：80065 / 合并代码 / 克隆主数据 / 历史需求合并 等
 //   B. 合并+单号/版本号型（一线常见自由格式）：合并260815 / 合并需求至现场版本 / 合并升级 / 合并单 等
-const MERGE_REGEX = /合并\d{3,}|@1?\d{6,}|（合并|合并多|合并代码|合代码|合并需求\d|合并需求至|合并需求：|合并【\d+】|克隆主数据|历史需求合并|合并升级|合并单|合并到版本|合并至版本|至\d{6}迭代|到\d{6}迭代|至\d{6}版本|至泰康\d/;
+//   C. RACC 转产品需求型（方括号标记）：[合并需求][原始需求ID:1214485]标题 —— 全/半角方括号均覆盖
+const MERGE_REGEX = /合并\d{3,}|@1?\d{6,}|（合并|合并多|合并代码|合代码|合并需求\d|合并需求至|合并需求：|合并【\d+】|\[合并需求\]|［合并需求］|原始需求ID[:：]|克隆主数据|历史需求合并|合并升级|合并单|合并到版本|合并至版本|至\d{6}迭代|到\d{6}迭代|至\d{6}版本|至泰康\d/;
 function isMergeItem(title) {
   return MERGE_REGEX.test(title);
 }
@@ -56,13 +57,13 @@ const _argJson = (() => { try { return JSON.parse(process.env.SKILL_ARGS_JSON ||
 const JSON_MODE = args.includes('--json') || !!_argJson.json;
 // MD 报告模式：--md 或 {"md":true}——执行完整聚拢流程，stdout 仅输出 MD 报告全文（不写文件），供 AIStudio「导出 MD」下载
 const MD_MODE = !JSON_MODE && (args.includes('--md') || !!_argJson.md);
-// 条线过滤：line=inpatient/outpatient/emergency（也接受 住院/门诊/急诊、BLGL/MZBL/JZBL），留空=不过滤（全部条线）
+// 条线过滤：line=inpatient/outpatient/emergency（也接受 住院/门诊/急诊、新码 EmrIp/EmrOp/EmrEmg、旧码 BLGL/MZBL/JZBL），留空=不过滤（全部条线）
 const LINE_PREFIX = (() => {
   const cli = (args.find(a => String(a).startsWith('--line=')) || '').split('=')[1] || '';
   const raw = String(_argJson.line || _argJson.sys || cli || '').trim().toLowerCase();
-  if (['inpatient', '住院', 'blgl'].includes(raw)) return 'BLGL';
-  if (['outpatient', '门诊', 'mzbl'].includes(raw)) return 'MZBL';
-  if (['emergency', '急诊', 'jzbl'].includes(raw)) return 'JZBL';
+  if (['inpatient', '住院', 'blgl', 'emrip'].includes(raw)) return 'EmrIp';
+  if (['outpatient', '门诊', 'mzbl', 'emrop'].includes(raw)) return 'EmrOp';
+  if (['emergency', '急诊', 'jzbl', 'emremg'].includes(raw)) return 'EmrEmg';
   return '';
 })();
 // 历史生命周期模式：--since=2024-01-01 或 {"since":"2024-01-01"}
@@ -88,7 +89,7 @@ const DEEP_MODE = Boolean(HISTORY_SINCE || IDS_MODE.length);
 // 默认启用；{"specKb": false} 关闭；kbApi 可指定平台地址（默认本机 8091）
 const SPEC_KB_ENABLED = !(String(_argJson.specKb === undefined ? '' : _argJson.specKb).toLowerCase() === 'false');
 const KB_API_BASE = String(_argJson.kbApi || process.env.KB_API || 'http://localhost:8091').replace(/\/+$/, '');
-const KB_LINE = { BLGL: 'inpatient-emr', MZBL: 'outpatient-emr', JZBL: 'emergency-emr' };
+const KB_LINE = { EmrIp: 'inpatient-emr', EmrOp: 'outpatient-emr', EmrEmg: 'emergency-emr' };
 const KB_TOPK = 6;
 const KB_MAX_QUERIES = 400;
 const positional = args.filter(a => !String(a).startsWith('--'));
@@ -250,14 +251,14 @@ function parseStructureTree(markdown, sys) {
       continue;
     }
 
-    // 匹配模块标题行: "### 01 病历书写（BLGL-01-BLSX）— 12 个功能点"
-    let m = line.match(/### (\d+) (.+?)（([A-Z]+-\d+-[A-Z]+)）.*?(\d+)\s*个功能点/);
+    // 匹配模块标题行: "### 01 病历书写（EmrIp-Write）— 12 个功能点"
+    let m = line.match(/### (\d+) (.+?)（([A-Za-z]+-[A-Za-z]+)）.*?(\d+)\s*个功能点/);
     if (!m) {
-      m = line.match(/### (\d+) (.+?)（([A-Z]+-\d+-[A-Z]+)）/);
+      m = line.match(/### (\d+) (.+?)（([A-Za-z]+-[A-Za-z]+)）/) || null;
     }
     if (m) {
       const modCode = m[3];
-      const modName = m[1] + ' ' + m[2];
+      const modName = m[1] + ' ' + m[2].trim();
       const fpCount = parseInt(m[4]) || 0;
       const domain = currentDomain || '其他';
       modules[modCode] = { sys, domain, name: modName, fp: fpCount };
@@ -265,8 +266,8 @@ function parseStructureTree(markdown, sys) {
       continue;
     }
 
-    // 匹配功能点行: "| BLGL-01-BLSX-001 | 病历创建与模板管理 | L1 | 一句话描述"
-    const fpMatch = line.match(/\| ([A-Z]+-\d+-[A-Z]+-\d{3}) \| (.+?) \| (L[12]) \| (.+?) \|/);
+    // 匹配功能点行: "| EmrIp-Write-001-EmrCreate | 病历创建与模板管理 | L1 | 一句话描述"
+    const fpMatch = line.match(/\| ([A-Za-z]+-[A-Za-z]+-\d{3}-[A-Za-z]+) \| (.+?) \| (L[12]) \| (.+?) \|/);
     if (fpMatch && currentModule) {
       const fpCode = fpMatch[1];
       const fpName = fpMatch[2];
@@ -431,8 +432,8 @@ function matchFunctionPoint(itemId, fpMap, title, description, tfsModule) {
         score += 2;
       }
 
-      // 评分4: 功能点代码的模块前缀与标题中的模块名匹配
-      const moduleHint = fp.module.replace(/^[A-Z]+-\d+-/, '').toLowerCase();
+      // 评分4: 功能点代码的模块段与标题中的模块名匹配（新码 EmrIp-Write-001-EmrCreate → write）
+      const moduleHint = (fp.module.split('-')[1] || '').toLowerCase();
       if (title && title.toLowerCase().includes(moduleHint)) {
         score += 1;
       }
@@ -446,13 +447,6 @@ function matchFunctionPoint(itemId, fpMap, title, description, tfsModule) {
       // 调试：打印 #1751751 的匹配详情
       if (itemId === '1751751' && score > 0) {
         console.error('  [DEBUG] ' + fp.code + ' (' + fp.name + ') score=' + score + ' module=' + fp.module);
-      }
-
-      // 调试：验证 fp-map 是否加载了精标关键词
-      if (itemId === '1751751' && fp.code === 'BLGL-13-BASY-007') {
-        console.error('  [DEBUG FP] BASY-007 terms count:', fp.terms.size);
-        console.error('  [DEBUG FP] BASY-007 terms sample:', [...fp.terms].slice(0, 5));
-        console.error('  [DEBUG FP] moduleHintSet:', [...moduleHintSet]);
       }
     }
 
@@ -554,15 +548,6 @@ function classifyItem(title, description, tfsModuleName) {
   // 策略1: 有TFS模块名称 → 精确映射到Spec编码
   if (tfsModuleName && tfsModuleMap[tfsModuleName]) {
     const mappedCode = tfsModuleMap[tfsModuleName];
-    if (mappedCode === 'JZBL-06-ALGL' || mappedCode === 'JZBL-05-ZLXXY') {
-      if (text.includes('诊疗信息页') || text.includes('急诊视图')) {
-        return { code: 'JZBL-05-ZLXXY', isSuggestion: false, confidence: 'high' };
-      }
-      if (mappedCode === 'JZBL-05-ZLXXY') {
-        return { code: 'JZBL-05-ZLXXY', isSuggestion: false, confidence: 'high' };
-      }
-      return { code: 'JZBL-06-ALGL', isSuggestion: false, confidence: 'high' };
-    }
     return { code: mappedCode, isSuggestion: false, confidence: 'high' };
   }
 
@@ -850,7 +835,7 @@ async function main() {
     for (const [fpCode, fpInfo] of Object.entries(fpMap)) {
       if (fpStats[fpCode]) continue;
       const mod = specModules[fpInfo.module] || {};
-      fpStats[fpCode] = { code: fpCode, name: fpInfo.name || fpCode, module: mod.name || fpInfo.module || '', dates: [], req: 0, soft: 0, items: [] };
+      fpStats[fpCode] = { code: fpCode, name: fpInfo.name || fpCode, module: mod.name || fpInfo.module || '', dates: [], req: 0, soft: 0, items: [], mergeCount: 0, mergeItems: [] };
     }
     for (const [code, group] of Object.entries(groups)) {
       for (const item of group.items) {
@@ -858,11 +843,21 @@ async function main() {
         const fpInfo = fpMap[item.fpCode];
         if (!fpInfo || fpInfo.module !== code) continue;
         if (!fpStats[item.fpCode]) {
-          fpStats[item.fpCode] = { code: item.fpCode, name: fpInfo.name || item.fpCode, module: group.name || code, dates: [], req: 0, soft: 0, items: [] };
+          fpStats[item.fpCode] = { code: item.fpCode, name: fpInfo.name || item.fpCode, module: group.name || code, dates: [], req: 0, soft: 0, items: [], mergeCount: 0, mergeItems: [] };
         }
         const st = fpStats[item.fpCode];
+        // 合并类需求不计入 FPI（口径对齐 MD 报告：问题数 = 独立需求数 + 软质数，合并需求与接口不计入）。
+        // 仅排除功能性合并单；软质/接口优先分类，不受合并识别影响（对齐 generate-report.js countCategories）。
+        // 修复前：合并单只打标不排除，会因描述关键词（如"手术记录/手术"）被误归入功能点并计入健康度。
+        const isSoft = item.requirementType === '软件质量' || item.requirementType === '软质';
+        const isIface = item.requirementType === '接口' || item.requirementType === 'Interface';
+        if (item.isMerge && !isSoft && !isIface) {
+          st.mergeCount++;
+          st.mergeItems.push({ id: item.id, title: item.title, state: item.state || '', createdDate: item.createdDate || '' });
+          continue;
+        }
         st.dates.push(item.createdDate ? new Date(item.createdDate) : null);
-        if (item.requirementType === '软件质量' || item.requirementType === '软质') st.soft++; else st.req++;
+        if (isSoft) st.soft++; else st.req++;
         st.items.push({ id: item.id, title: item.title, state: item.state || '', type: item.workItemType || '', reqType: item.requirementType || '', createdDate: item.createdDate || '', confidence: item.confidence || '', kbScore: item.kbScore || null });
       }
     }
@@ -900,9 +895,11 @@ async function main() {
         longTailPen = 0;
       }
       const fpi = Math.max(0, Math.round(100 - softPen - trendPen - recurPen - longTailPen));
-      return { code: st.code, name: st.name, module: st.module, total, req: st.req, soft: st.soft, avgMonthly, softRatio, trend, fpi, recurrence, quarterly, firstDate, lastDate, spanMonths, window: HISTORY_SINCE ? { since: HISTORY_SINCE } : (IDS_MODE.length ? { mode: 'link-ids', count: IDS_MODE.length } : null), items: st.items.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')) };
+      return { code: st.code, name: st.name, module: st.module, total, req: st.req, soft: st.soft, mergeCount: st.mergeCount || 0, mergeItems: st.mergeItems || [], avgMonthly, softRatio, trend, fpi, recurrence, quarterly, firstDate, lastDate, spanMonths, window: HISTORY_SINCE ? { since: HISTORY_SINCE } : (IDS_MODE.length ? { mode: 'link-ids', count: IDS_MODE.length } : null), items: st.items.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')) };
     }).sort((a, b) => a.fpi - b.fpi);
     // 未匹配功能点汇总：需求（无功能点匹配 → 建议新增）与软质（模块级归类，未挂到功能点）
+    // 合并类不计入健康度口径（对齐 MD 报告：合并需求单列到（二），不算未匹配/健康度问题数）
+    const unmatchedSuggestions = suggestions.filter(s => !s.isMerge);
     const unmatchedSoftItems = [];
     for (const group of Object.values(groups)) {
       for (const item of group.items) {
@@ -914,15 +911,15 @@ async function main() {
     const softByModuleMap = {};
     for (const it of unmatchedSoftItems) softByModuleMap[it.module] = (softByModuleMap[it.module] || 0) + 1;
     const unmatched = {
-      req: suggestions.length,
+      req: unmatchedSuggestions.length,
       soft: unmatchedSoftItems.length,
-      total: suggestions.length + unmatchedSoftItems.length,
+      total: unmatchedSuggestions.length + unmatchedSoftItems.length,
       softByModule: Object.entries(softByModuleMap).map(([module, count]) => ({ module, count })).sort((a, b) => b.count - a.count),
-      // 完整明细（供平台「未匹配汇总」展开查看）
-      reqItems: suggestions.map(s => ({ id: s.id, title: s.title, state: s.state || '', module: s.tfsModule || '', suggestedCode: s.suggestedCode || '' })),
+      // 完整明细（供平台「未匹配汇总」展开查看）；合并类不计入健康度口径，同口径排除
+      reqItems: unmatchedSuggestions.map(s => ({ id: s.id, title: s.title, state: s.state || '', module: s.tfsModule || '', suggestedCode: s.suggestedCode || '' })),
       softItems: unmatchedSoftItems,
       samples: [
-        ...suggestions.slice(0, 8).map(s => ({ id: s.id, title: s.title, kind: '需求', module: s.tfsModule || '' })),
+        ...unmatchedSuggestions.slice(0, 8).map(s => ({ id: s.id, title: s.title, kind: '需求', module: s.tfsModule || '' })),
         ...unmatchedSoftItems.slice(0, 8).map(s => ({ id: s.id, title: s.title, kind: '软质', module: s.module }))
       ]
     };
@@ -938,7 +935,7 @@ async function main() {
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const mergedReport = generateReport(logResult, logProgress, sysOrder, domainOrder, groups, specModules, fpMap,
     matchedFpCounts, fpReqCounts, unassigned, suggestions, baselineItems, allItems, allItems, elapsed, outputPath, fs);
-  const LINE_TITLES = { BLGL: '住院病历', MZBL: '门诊病历', JZBL: '急诊病历' };
+  const LINE_TITLES = { EmrIp: '住院病历', EmrOp: '门诊病历', EmrEmg: '急诊病历' };
   if (MD_MODE && LINE_PREFIX && LINE_TITLES[LINE_PREFIX]) {
     // 单条线导出：文档标题即「XX病历需求归集」（mergedReport 首个章节头），顶部仅保留数据源引言
     logResult('> **总查询工作项**: ' + allItems.length + ' 项  |  条线: ' + LINE_TITLES[LINE_PREFIX] + '  |  数据源: TFS WINNING-6.0');

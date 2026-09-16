@@ -81,7 +81,7 @@ function generateReport(logResult, logProgress, sysOrder, domainOrder, groups, s
     const L = (msg) => lines.push((msg || '') + '\n');
 
     // 提前收集：合并需求、软质、接口（当前系统）
-    const sysPrefix = sys === '住院病历' ? 'BLGL' : (sys === '急诊病历' ? 'JZBL' : 'MZBL');
+    const sysPrefix = sys === '住院病历' ? 'EmrIp' : (sys === '急诊病历' ? 'EmrEmg' : 'EmrOp');
     const mergeItems = [];
     const softItems = [];
     const ifaceItems = [];
@@ -214,7 +214,7 @@ function generateReport(logResult, logProgress, sysOrder, domainOrder, groups, s
         const indepItems = group.items.filter(item => {
           if (item.category !== '功能性的') return false;
           if (item.isMerge) return false;
-          if (group.code === 'BLGL-98-JK') return false; // 接口模块不单列
+          if (false) return false; // 新编码体系已取消 98-JK 接口兜底模块
           return true;
         });
         if (indepItems.length === 0) continue;

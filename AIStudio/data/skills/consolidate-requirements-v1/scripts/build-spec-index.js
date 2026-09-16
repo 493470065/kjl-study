@@ -28,13 +28,13 @@ const path = require('path');
 
 const DEFAULT_SPEC_ROOT = 'E:/37结构性问题治理/01WiNEX 病历管理';
 const SYS_DIRS = [
-  { dir: '住院病历Spec', sys: '住院病历', prefix: 'BLGL' },
-  { dir: '急诊病历Spec', sys: '急诊病历', prefix: 'JZBL' },
-  { dir: '门诊病历Spec', sys: '门诊病历', prefix: 'MZBL' }
+  { dir: '住院病历Spec', sys: '住院病历', prefix: 'EmrIp' },
+  { dir: '急诊病历Spec', sys: '急诊病历', prefix: 'EmrEmg' },
+  { dir: '门诊病历Spec', sys: '门诊病历', prefix: 'EmrOp' }
 ];
 
-// 编码正则：{ProductCode}-{ModNN}-{SSS}-{NNN}；产品码 BLGL/JZBL/MZBL（B 开头是 BLGL 而非 BZBL）
-const FP_CODE_RE = /(BLGL|JZBL|MZBL)-\d{2}-[A-Z]+-\d{3}/g;
+// 编码正则：{SysCode}-{ModName}-{NNN}-{FeatName}；系统码 EmrIp/EmrEmg/EmrOp（兼容旧四段式 BLGL/JZBL/MZBL）
+const FP_CODE_RE = /((EmrIp|EmrEmg|EmrOp)-[A-Za-z]+-\d{3}-[A-Za-z]+|(BLGL|JZBL|MZBL)-\d{2}-[A-Z]+-\d{3})/g;
 
 const args = process.argv.slice(2);
 const specRoot = args[0] || DEFAULT_SPEC_ROOT;
@@ -134,19 +134,24 @@ for (const sysDir of SYS_DIRS) {
     continue;
   }
   for (const modDir of fs.readdirSync(absSys, { withFileTypes: true })) {
-    if (!modDir.isDirectory() || !modDir.name.includes(sysDir.prefix)) continue;
+    if (!modDir.isDirectory()) continue;
+    // 目录名含新模块码（EmrIp-Write）或旧模块码（BLGL-01-BLSX）均可；未含码的目录跳过
+    if (!/(EmrIp|EmrEmg|EmrOp)-[A-Za-z]+/.test(modDir.name) && !/(BLGL|JZBL|MZBL)-\d{2}-[A-Z]+/.test(modDir.name)) continue;
     const modAbs = path.join(absSys, modDir.name);
     for (const fpDir of fs.readdirSync(modAbs, { withFileTypes: true })) {
       if (!fpDir.isDirectory()) continue;
-      const m = fpDir.name.match(/^(BLGL|JZBL|MZBL)-\d{2}-[A-Z]+-\d{3}/);
+      // 新编码 {SysCode}-{ModName}-{NNN}-{FeatName} 优先，兼容旧四段式
+      const mNew = fpDir.name.match(/^((?:EmrIp|EmrEmg|EmrOp)-[A-Za-z]+-\d{3}-[A-Za-z]+)/);
+      const mOld = fpDir.name.match(/^(BLGL|JZBL|MZBL)-\d{2}-[A-Z]+-\d{3}/);
+      const m = mNew || mOld;
       if (!m) continue;
       const fpCode = m[0];
       if (index[fpCode]) continue; // 已登记（防跨线重名）
 
       const fpAbs = path.join(modAbs, fpDir.name);
       const entry = {
-        name: fpDir.name.replace(/^(BLGL|JZBL|MZBL)-\d{2}-[A-Z]+-\d{3}_/, ''),
-        module: fpCode.replace(/-\d{3}$/, ''),
+        name: fpDir.name.replace(new RegExp('^' + fpCode + '[_-]'), ''),
+        module: fpCode.replace(/-\d{3}-[A-Za-z]+$/, '').replace(/-\d{3}$/, ''),
         sys: sysDir.sys,
         hasSpec: false,
         includeCount: 0,

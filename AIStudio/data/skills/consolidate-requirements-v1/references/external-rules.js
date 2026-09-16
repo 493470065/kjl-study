@@ -35,7 +35,7 @@ const businessFeatures = ['校验','审核','审批','触发','联动','自动�
   '授权','锁定','解锁','归档','召回','借阅','封存','会诊','诊断','评估',
   '质控','统计','分析','报表','导出','打印'];
 
-// 纯接口词（BLGL-98-JK 模块专用）
+// 纯接口词（新编码体系已取消 98-JK/99-QT 兜底模块；TFS 模块名若映射到未知模块则不触发本分支）
 const pureInterfaceWords = ['简单对接','接口','通道','同步','传输','调用','视图','快开','视图数据','数据视图','提供视图','数据库视图','快开视图'];
 
 // ============================================================
@@ -45,8 +45,8 @@ const pureInterfaceWords = ['简单对接','接口','通道','同步','传输','
 function isBaselineRequirement(title, description, moduleCode) {
   const text = (title + ' ' + description).toLowerCase();
 
-  // 特殊处理：接口模块
-  if (moduleCode === 'BLGL-98-JK' || moduleCode === 'BLGL-99-QT') {
+  // 特殊处理：接口模块（新编码体系已取消 98-JK/99-QT 兜底模块，保留逻辑兼容历史映射）
+  if (moduleCode && /-(98-JK|99-QT)$/.test(moduleCode)) {
     let matchCount = 0;
     for (const w of pureInterfaceWords) {
       if (text.includes(w)) matchCount++;
